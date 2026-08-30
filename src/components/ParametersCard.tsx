@@ -17,6 +17,7 @@ export interface ParameterFields {
   density_um3: string;
   a_a0: string;
   dt_measured_s: string;
+  na_override_um2: string;
 }
 
 export function toInputs(
@@ -32,6 +33,7 @@ export function toInputs(
     density_um3: parseNum(f.density_um3),
     a_a0: parseNum(f.a_a0),
     dt_measured_s: parseNum(f.dt_measured_s),
+    na_override_um2: parseNum(f.na_override_um2),
   };
 }
 
@@ -48,7 +50,11 @@ export function ParametersCard({
   desc: SpectralDescriptors | null;
   spectrum: PreparedSpectrum | null;
 }) {
-  const set = (k: keyof ParameterFields) => (v: string) => onFields({ ...fields, [k]: v });
+  const set = (k: keyof ParameterFields) => (v: string) => onFields({
+    ...fields,
+    [k]: v,
+    ...(k === 'dt_measured_s' ? { na_override_um2: '' } : {}),
+  });
   const blurb = MODES.find((m) => m.id === mode)!.blurb;
   const nonDefaultSpecies = speciesKey !== DEFAULT_SPECIES_KEY;
 
@@ -67,13 +73,18 @@ export function ParametersCard({
     : null;
 
   React.useEffect(() => {
-    if (mode !== 'known_NVa' || volumeInput !== 'cylinder' || cylV == null) return;
-    const current = parseNum(fields.V_um3);
-    if (current == null || Math.abs(current / cylV - 1) > 1e-9) {
-      onFields({ ...fields, V_um3: cylV.toPrecision(8) });
+    setShootResult(null);
+    shoot.reset();
+  }, [formulaNa, speciesKey, spectrum, shoot.reset]);
+
+  const openCylinder = () => {
+    const currentV = parseNum(fields.V_um3);
+    const rho = parseNum(cylinderRatio) ?? 0.5;
+    if (currentV != null && currentV > 0 && rho > 0) {
+      setCylinderL(Math.cbrt(currentV / (Math.PI * rho * rho)).toPrecision(8));
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, volumeInput, cylV]);
+    setVolumeInput('cylinder');
+  };
 
   const runRefine = async () => {
     if (!desc || !spectrum || formulaNa == null) return;
@@ -116,7 +127,7 @@ export function ParametersCard({
                 <Field
                   label={<span className="flex items-center justify-between gap-2">Volume V
                     <button type="button" className="text-2xs text-accent-600 dark:text-accent-400 font-normal hover:underline"
-                      onClick={() => setVolumeInput('cylinder')}>from R, L →</button>
+                      onClick={openCylinder}>from R, L →</button>
                   </span>}
                   unit="μm³"
                 >
@@ -140,8 +151,18 @@ export function ParametersCard({
                     </div>
                   </div>
                   <p className="text-3xs text-slate-500 dark:text-slate-400 mt-1">
-                    V = πR²L{cylR != null && <> · R = {sig(cylR, 4)} μm · V = {sig(cylV ?? 0, 4)} μm³</>}
+                    Preview only · V = πR²L{cylR != null && <> · R = {sig(cylR, 4)} μm · V = {sig(cylV ?? 0, 4)} μm³</>}
                   </p>
+                  <button
+                    type="button"
+                    className="btn-primary mt-2 w-full justify-center text-2xs py-1"
+                    disabled={cylV == null || !(cylV > 0)}
+                    onClick={() => {
+                      if (cylV != null && cylV > 0) onFields({ ...fields, V_um3: cylV.toPrecision(10) });
+                    }}
+                  >
+                    Apply cylinder volume
+                  </button>
                 </div>
               )}
 
@@ -205,11 +226,27 @@ export function ParametersCard({
             )}
             {shoot.error && <Callout tone="danger">{shoot.error}</Callout>}
             {shootResult && (
-              <div className="grid grid-cols-2 gap-x-5 pt-1 border-t border-slate-100 dark:border-slate-800">
-                <Metric label="formula na" value={expo(formulaNa)} unit="μm⁻²" />
-                <Metric label="simulation-refined na" value={expo(shootResult.na)} unit="μm⁻²" emphasis />
-                <Metric label="shift" value={`${((shootResult.na / formulaNa - 1) * 100).toFixed(2)}%`} />
-                <Metric label="status" value={shootResult.converged ? 'converged' : `stopped after ${shoot.steps.length} iterations`} />
+              <>
+                <div className="grid grid-cols-2 gap-x-5 pt-1 border-t border-slate-100 dark:border-slate-800">
+                  <Metric label="formula estimate: na" value={expo(formulaNa)} unit="μm⁻²" />
+                  <Metric label="simulation-refined: na" value={expo(shootResult.na)} unit="μm⁻²" emphasis />
+                  <Metric label="shift" value={`${((shootResult.na / formulaNa - 1) * 100).toFixed(2)}%`} />
+                  <Metric label="status" value={shootResult.converged ? 'converged' : `stopped after ${shoot.steps.length} iterations`} />
+                </div>
+                <button
+                  className="btn-primary w-full justify-center text-2xs py-1"
+                  onClick={() => onFields({ ...fields, na_override_um2: shootResult.na.toPrecision(12) })}
+                >
+                  Use simulation-refined value
+                </button>
+              </>
+            )}
+            {fields.na_override_um2 && (
+              <div className="flex items-center justify-between gap-2 rounded-md bg-green-50 px-2.5 py-1.5 text-2xs text-green-800 dark:bg-green-950/30 dark:text-green-300">
+                <span>Active na: simulation-refined value</span>
+                <button className="font-medium hover:underline" onClick={() => onFields({ ...fields, na_override_um2: '' })}>
+                  Use formula result
+                </button>
               </div>
             )}
           </div>

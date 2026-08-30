@@ -24,8 +24,7 @@ const DRAW_KNOTS = 192;
 const DRAW_K_LIMIT = 5.3;
 
 export function InitialStateCard({
-  spectrum, desc, norm, onSpectrum, presetKey, onPresetKey,
-  requireAcceptance = false, accepted = false, onAccept, onEdit,
+  spectrum, desc, norm, onSpectrum, presetKey, onPresetKey, onDraftChange,
 }: {
   spectrum: PreparedSpectrum | null;
   desc: SpectralDescriptors | null;
@@ -33,10 +32,7 @@ export function InitialStateCard({
   onSpectrum: (s: PreparedSpectrum, presetKey: string | null) => void;
   presetKey: string | null;
   onPresetKey: (k: string) => void;
-  requireAcceptance?: boolean;
-  accepted?: boolean;
-  onAccept?: () => void;
-  onEdit?: () => void;
+  onDraftChange?: (dirty: boolean) => void;
 }) {
   const [source, setSource] = useState<Source>('preset');
   const [convention, setConvention] = useState<SpectrumConvention>('Nk_over_N');
@@ -49,11 +45,10 @@ export function InitialStateCard({
 
   const [drawValues, setDrawValues] = useState<number[]>(() => new Array(DRAW_KNOTS).fill(0));
   const [drawKMax, setDrawKMax] = useState(3.7);
+  const [drawDirty, setDrawDirty] = useState(false);
   const drawK = Array.from({ length: DRAW_KNOTS }, (_, index) => (index / (DRAW_KNOTS - 1)) * drawKMax);
 
-  useEffect(() => {
-    if (requireAcceptance) setExpanded(!accepted);
-  }, [requireAcceptance, accepted]);
+  useEffect(() => onDraftChange?.(drawDirty), [drawDirty, onDraftChange]);
 
   const ingest = useCallback((raw: string, label: string, src: 'paste' | 'file') => {
     try {
@@ -72,6 +67,7 @@ export function InitialStateCard({
   };
 
   const chooseSource = (next: Source) => {
+    if (next !== 'draw') setDrawDirty(false);
     if (next === 'draw' && spectrum) {
       const nextKMax = Math.min(DRAW_K_LIMIT, spectralExtent(spectrum.k, spectrum.q));
       const nextK = Array.from({ length: DRAW_KNOTS }, (_, index) => (index / (DRAW_KNOTS - 1)) * nextKMax);
@@ -84,6 +80,7 @@ export function InitialStateCard({
       const peak = Math.max(...sampled, 1e-30);
       setDrawValues(Array.from(sampled, (value) => Math.max(0, value / peak)));
       setDrawKMax(nextKMax);
+      setDrawDirty(false);
     }
     setSource(next);
   };
@@ -112,6 +109,7 @@ export function InitialStateCard({
       });
       setError(null);
       onSpectrum(prepared, null);
+      setDrawDirty(false);
     } catch (e) {
       setError(e instanceof SpectrumParseError ? e.message : String(e));
     }
@@ -172,15 +170,9 @@ export function InitialStateCard({
     : drawValues.slice();
   const drawDisplay = Array.from(applyNorm(drawQ, norm));
   const fromDrawDisplay = (values: number[]) => values.map((value) => value / norm.scale);
-  const editAcceptedState = () => {
-    onEdit?.();
-    setExpanded(true);
-  };
-
   return (
     <Card
-      title={requireAcceptance ? '1 · Initial state' : 'Initial state'}
-      onActivate={requireAcceptance && accepted && !expanded ? editAcceptedState : undefined}
+      title="Initial state"
       actions={
         <div className="flex items-center gap-2">
           {expanded && spectrum && (
@@ -201,26 +193,14 @@ export function InitialStateCard({
               </button>
             </div>
           )}
-          {accepted && <Badge tone="success">accepted</Badge>}
-          {requireAcceptance ? (
-            accepted && (
-              <button
-                className="btn-secondary text-xs"
-                onClick={(event) => { event.stopPropagation(); editAcceptedState(); }}
-              >
-                ✎ Edit state
-              </button>
-            )
-          ) : (
-            <button
-              className="btn-secondary text-xs"
-              onClick={() => setExpanded((value) => !value)}
-              aria-expanded={expanded}
-              aria-controls="initial-state-content"
-            >
-              {expanded ? 'Collapse' : 'Expand'}
-            </button>
-          )}
+          <button
+            className="btn-secondary text-xs"
+            onClick={() => setExpanded((value) => !value)}
+            aria-expanded={expanded}
+            aria-controls="initial-state-content"
+          >
+            {expanded ? 'Collapse' : 'Expand'}
+          </button>
         </div>
       }
     >
@@ -275,10 +255,18 @@ export function InitialStateCard({
 
             <div
               className={clsx('drop-zone py-4 text-2xs', dragging && 'drop-zone-active')}
+              role="button"
+              tabIndex={0}
+              aria-label="Choose a spectrum CSV file"
               onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
               onDragLeave={() => setDragging(false)}
               onDrop={(e) => { e.preventDefault(); setDragging(false); onFiles(e.dataTransfer.files); }}
               onClick={() => fileRef.current?.click()}
+              onKeyDown={(e) => {
+                if (e.key !== 'Enter' && e.key !== ' ') return;
+                e.preventDefault();
+                fileRef.current?.click();
+              }}
             >
               <span>Drop a CSV here, or click to choose a file</span>
               {fileName && <span className="font-mono text-slate-500">{fileName}</span>}
@@ -328,13 +316,13 @@ export function InitialStateCard({
         {source === 'draw' && (
           <>
             <p className="text-2xs text-slate-500 dark:text-slate-400">
-              Draw directly on the spectrum plot. Changes are applied automatically and normalized to
-              <MathBlock math="\int N_k/N\,dk=1" />.
+              Draw directly on the spectrum plot, then apply the draft. Applied shapes are normalized to
+              <MathBlock math="\int N_k/N\,dk=1" />. Keyboard: focus the plot, use ←/→ to select k and ↑/↓ to adjust it.
             </p>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <button
                 className="btn-secondary text-xs"
-                onClick={() => setDrawValues(new Array(DRAW_KNOTS).fill(0))}
+                onClick={() => { setDrawValues(new Array(DRAW_KNOTS).fill(0)); setDrawDirty(true); }}
               >
                 Clear
               </button>
@@ -349,12 +337,27 @@ export function InitialStateCard({
                     return Math.exp(-0.5 * ((k - kp) / sigma) ** 2);
                   });
                   setDrawValues(next);
-                  applyDrawnShape(next);
+                  setDrawDirty(true);
                 }}
               >
                 Seed bell curve
               </button>
+              <button
+                className="btn-primary text-xs"
+                disabled={!drawDirty || !(drawIntegral > 0)}
+                onClick={() => applyDrawnShape(drawValues)}
+              >
+                Apply shape
+              </button>
+              <button
+                className="btn-ghost text-xs"
+                disabled={!drawDirty}
+                onClick={() => { setDrawDirty(false); setSource('preset'); }}
+              >
+                Cancel edits
+              </button>
             </div>
+            {drawDirty && <Badge tone="warning">unsaved shape draft</Badge>}
           </>
         )}
 
@@ -415,8 +418,8 @@ export function InitialStateCard({
                 ]}
                 editableSeries={source === 'draw' ? {
                   id: 'draw',
-                  onChange: (values) => setDrawValues(fromDrawDisplay(values)),
-                  onCommit: (values) => applyDrawnShape(fromDrawDisplay(values)),
+                  onChange: (values) => { setDrawValues(fromDrawDisplay(values)); setDrawDirty(true); },
+                  onCommit: (values) => { setDrawValues(fromDrawDisplay(values)); setDrawDirty(true); },
                   min: 0,
                 } : undefined}
                 markers={desc ? [
@@ -455,39 +458,6 @@ export function InitialStateCard({
           </>
         )}
       </div>
-          {requireAcceptance && (
-            <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-4">
-              <p className="text-2xs text-slate-500 dark:text-slate-400">
-                Accept this normalized state to unlock the WKE simulation.
-              </p>
-              <button className="btn-primary text-xs whitespace-nowrap" disabled={!spectrum || !desc} onClick={onAccept}>
-                ✓ Accept initial state
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div
-        className="collapse-region"
-        data-collapsed={expanded || !accepted || !spectrum || !desc}
-        aria-hidden={expanded || !accepted || !spectrum || !desc}
-      >
-        <div className="collapse-region-inner">
-          {accepted && spectrum && desc && (
-            <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-2xs">
-              <span className="font-medium text-slate-800 dark:text-slate-100">{spectrum.raw.label}</span>
-              <span className="text-slate-500 dark:text-slate-400">
-                <MathBlock math="k_{p,0}" /> = <span className="font-mono">{sig(desc.kp0_um_inv)} μm⁻¹</span>
-              </span>
-              <span className="text-slate-500 dark:text-slate-400">
-                FWHM = <span className="font-mono">{sig(desc.fwhm_um_inv)} μm⁻¹</span>
-              </span>
-              <span className="text-slate-500 dark:text-slate-400">
-                <MathBlock math="C_{\mathrm{shape}}" /> = <span className="font-mono">{desc.c_shape.toFixed(5)}</span>
-              </span>
-            </div>
-          )}
         </div>
       </div>
     </Card>

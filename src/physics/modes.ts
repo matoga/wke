@@ -17,6 +17,18 @@ import { inferNA } from './calibration';
 import type { SpectralDescriptors } from './descriptors';
 import type { DerivedPhysics, ParameterMode, PhysicsInputs } from '../types/wke';
 
+/** Invalid provided values that would otherwise make a run fail or silently no-op. */
+export function validatePhysicsInputs(inputs: PhysicsInputs): string[] {
+  const errors: string[] = [];
+  if (inputs.a_a0 != null && !(inputs.a_a0 > 0)) errors.push('Scattering length a must be positive for this WKE.');
+  if (inputs.N != null && !(inputs.N > 0)) errors.push('Atom number N must be positive.');
+  if (inputs.V_um3 != null && !(inputs.V_um3 > 0)) errors.push('Volume V must be positive.');
+  if (inputs.density_um3 != null && !(inputs.density_um3 > 0)) errors.push('Density n must be positive.');
+  if (inputs.dt_measured_s != null && !(inputs.dt_measured_s > 0)) errors.push('Measured Δt₁ᐟ₂ must be positive.');
+  if (inputs.na_override_um2 != null && !(inputs.na_override_um2 > 0)) errors.push('Refined na must be positive.');
+  return errors;
+}
+
 export const MODES: Array<{ id: ParameterMode; label: string; blurb: string }> = [
   {
     id: 'known_NVa',
@@ -40,11 +52,12 @@ export function derivePhysics(
   inputs: PhysicsInputs,
   desc: SpectralDescriptors | null,
 ): DerivedPhysics {
-  const notes: string[] = [];
+  const notes: string[] = validatePhysicsInputs(inputs);
   const empty: DerivedPhysics = {
     density_um3: null, a_a0: null, na_um2: null, V_um3: null, N: null,
     quantumAvailable: false, notes,
   };
+  if (notes.length > 0) return empty;
 
   const aUm = (a: number) => a * BOHR_RADIUS_UM;
 
@@ -92,11 +105,11 @@ export function derivePhysics(
     return empty;
   }
 
-  const na = inferNA(desc, dt_measured_s);
+  const na = inputs.na_override_um2 ?? inferNA(desc, dt_measured_s);
   let density: number | null = null;
   let volume: number | null = null;
 
-  if (a_a0 != null && a_a0 !== 0) {
+  if (a_a0 != null && a_a0 > 0) {
     density = na / aUm(a_a0);
     if (N != null && N > 0) {
       volume = N / density;

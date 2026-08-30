@@ -7,7 +7,7 @@ import React from 'react';
 import { clsx } from 'clsx';
 import { Card, Metric, Badge, Callout } from '../ui/primitives';
 import { COLORS, sig, expo, seconds, pct } from '../ui/theme';
-import { predictDeltaT } from '../physics/calibration';
+import { inferNA, predictDeltaT } from '../physics/calibration';
 import type { SpectralDescriptors } from '../physics/descriptors';
 import type { DerivedPhysics, ParameterMode, WKEResult } from '../types/wke';
 
@@ -41,13 +41,15 @@ function Panel({
 }
 
 export function ResultsCard({
-  mode, desc, derived, dtMeasured_s, runs,
+  mode, desc, derived, dtMeasured_s, runs, runIsStale, usingRefinedNa,
 }: {
   mode: ParameterMode;
   desc: SpectralDescriptors | null;
   derived: DerivedPhysics;
   dtMeasured_s: number | null;
   runs: Partial<Record<'classical' | 'quantum', WKEResult>>;
+  runIsStale: boolean;
+  usingRefinedNa: boolean;
 }) {
   if (!desc) {
     return (
@@ -67,10 +69,18 @@ export function ResultsCard({
 
   const diffFormulaWKE = frac(dtFormula, dtWKE);
   const inverse = mode === 'measured_dt';
+  const formulaNa = inverse && dtMeasured_s != null && dtMeasured_s > 0
+    ? inferNA(desc, dtMeasured_s)
+    : null;
 
   return (
-    <Card title={inverse ? 'Inferred interaction parameter' : 'Transport time'}>
+    <Card title={inverse ? 'Calibration result' : 'Transport time'}>
       <div className="space-y-3">
+        {runIsStale && (
+          <Callout tone="warning" title="WKE result is out of date">
+            Physical parameters changed after the solve. Formula values use the current inputs; WKE values below come from the previous run.
+          </Callout>
+        )}
         {desc.domainStatus !== 'inside' && (
           <Callout tone="warning" title="Calibration formula is outside its certified range">
             <ul className="list-disc space-y-0.5 pl-4">
@@ -83,42 +93,46 @@ export function ResultsCard({
           <>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               <Panel
-                label="inferred na"
+                label="Measured half-time"
+                value={seconds(dtMeasured_s)}
+                sub="experimental input"
+                status={<Badge tone="neutral">input</Badge>}
+              />
+              <Panel
+                label="Formula estimate: na"
                 color={COLORS.formula}
-                value={na != null ? `${expo(na)}` : '-'}
-                sub="μm⁻²"
+                value={formulaNa != null ? expo(formulaNa) : '-'}
+                sub="μm⁻² · calculated from measured Δt₁ᐟ₂"
                 status={desc.domainStatus === 'inside'
-                  ? <Badge tone="success">formula certified</Badge>
-                  : <Badge tone="warning">formula extrapolated</Badge>}
+                  ? <Badge tone="success">certified</Badge>
+                  : <Badge tone="warning">extrapolated</Badge>}
               />
               <Panel
-                label="derived n"
-                value={derived.density_um3 != null ? sig(derived.density_um3) : '-'}
-                sub={derived.density_um3 != null ? 'μm⁻³  (= na / a)' : 'needs a'}
-                tone={derived.density_um3 == null ? 'muted' : undefined}
-              />
-              <Panel
-                label="derived V"
-                value={derived.V_um3 != null ? sig(derived.V_um3) : '-'}
-                sub={derived.V_um3 != null ? 'μm³  (= N / n)' : 'needs a and N'}
-                tone={derived.V_um3 == null ? 'muted' : undefined}
+                label="Simulation-refined: na"
+                color={COLORS.classical}
+                value={usingRefinedNa && na != null ? expo(na) : 'not applied'}
+                sub={usingRefinedNa ? 'μm⁻² · active value' : 'optional direct-WKE refinement'}
+                status={usingRefinedNa ? <Badge tone="success">active</Badge> : undefined}
+                tone={usingRefinedNa ? undefined : 'muted'}
               />
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5">
               <div>
-                <Metric label="measured Δt₁ᐟ₂" value={seconds(dtMeasured_s)} emphasis />
-                <Metric label="A_pred = κ k_p,0² C_shape" value={expo(desc.A_pred_s_um4)} unit="s·μm⁻⁴" />
+                <Metric label="active na" value={na != null ? expo(na) : '-'} unit="μm⁻²" emphasis />
+                <Metric label="derived n = na / a" value={derived.density_um3 != null ? sig(derived.density_um3) : 'needs a'} unit={derived.density_um3 != null ? 'μm⁻³' : undefined} />
+                <Metric label="derived V = N / n" value={derived.V_um3 != null ? sig(derived.V_um3) : 'needs a and N'} unit={derived.V_um3 != null ? 'μm³' : undefined} />
               </div>
               <div>
                 <Metric
-                  label="classical WKE Δt₁ᐟ₂ at inferred na"
+                  label="classical WKE Δt₁ᐟ₂ at active na"
                   value={dtWKE != null ? seconds(dtWKE) : 'not run'}
                 />
                 <Metric
                   label="WKE vs measured"
                   value={frac(dtWKE, dtMeasured_s) != null ? pct(frac(dtWKE, dtMeasured_s)!) : '-'}
                 />
+                <Metric label="A_pred = κ k_p,0² C_shape" value={expo(desc.A_pred_s_um4)} unit="s·μm⁻⁴" />
               </div>
             </div>
           </>

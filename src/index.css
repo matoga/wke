@@ -225,7 +225,7 @@
   }
 
   .tab-bar-item {
-    @apply px-3.5 py-1.5 rounded-lg text-[15px] font-medium transition-all
+    @apply px-2 sm:px-3.5 py-1.5 rounded-lg text-[13px] sm:text-[15px] whitespace-nowrap font-medium transition-all
            text-slate-700 dark:text-slate-200 hover:text-slate-950 dark:hover:text-white;
   }
 

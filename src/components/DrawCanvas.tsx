@@ -23,6 +23,8 @@ export function DrawCanvas({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(480);
+  const [keyboardIndex, setKeyboardIndex] = useState(0);
+  const [keyboardFocused, setKeyboardFocused] = useState(false);
   const dragging = useRef(false);
   const last = useRef<{ i: number; v: number } | null>(null);
 
@@ -111,6 +113,25 @@ export function DrawCanvas({
         height={height}
         viewBox={`0 0 ${width} ${height}`}
         className="touch-none cursor-crosshair select-none text-slate-300 dark:text-slate-700"
+        role="application"
+        tabIndex={0}
+        aria-label="Spectrum editor. Use left and right arrow keys to select k; use up and down arrows to change amplitude."
+        onFocus={() => setKeyboardFocused(true)}
+        onBlur={() => setKeyboardFocused(false)}
+        onKeyDown={(event) => {
+          let nextIndex = keyboardIndex;
+          if (event.key === 'ArrowLeft') nextIndex = Math.max(0, keyboardIndex - 1);
+          else if (event.key === 'ArrowRight') nextIndex = Math.min(n - 1, keyboardIndex + 1);
+          else if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+            const next = values.slice();
+            const step = yScale === 'log' ? Math.max(yFloor, next[keyboardIndex]) * 0.15 : 0.025;
+            next[keyboardIndex] = Math.min(1, Math.max(0,
+              next[keyboardIndex] + (event.key === 'ArrowUp' ? step : -step)));
+            onChange(next);
+          } else return;
+          setKeyboardIndex(nextIndex);
+          event.preventDefault();
+        }}
         {...handlers}
       >
         <g transform={`translate(${MARGIN.left},${MARGIN.top})`}>
@@ -122,6 +143,10 @@ export function DrawCanvas({
             className="text-accent-600 dark:text-accent-400" style={{ stroke: 'currentColor' }} />
           <path d={`${path} L${iw} ${ih} L0 ${ih} Z`} fill="currentColor" opacity={0.12}
             className="text-accent-600 dark:text-accent-400" />
+          {keyboardFocused && (
+            <circle cx={sx(keyboardIndex)} cy={sy(values[keyboardIndex])} r={4}
+              className="fill-accent-600 dark:fill-accent-400" stroke="white" strokeWidth={1.5} />
+          )}
           <rect x={0} y={0} width={iw} height={ih} fill="none" stroke="currentColor" strokeWidth={1} opacity={0.4} />
           {kTicks.map((t) => (
             <text key={t} x={xScale === 'log'

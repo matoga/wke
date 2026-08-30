@@ -5,12 +5,12 @@
  */
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { Card, Field, Metric } from '../ui/primitives';
+import { Card, Field, Metric, Badge } from '../ui/primitives';
 import { EXPORT_CONVENTIONS, EXPORT_K_UNITS, exportProfile } from '../physics/export';
 import type { ExportConvention, ExportKUnit } from '../physics/export';
 import type { PreparedSpectrum } from '../physics/spectrum';
 import type { KernelType } from '../physics/collision';
-import type { WKEResult } from '../types/wke';
+import type { DerivedPhysics, ParameterMode, RunProvenance, WKEResult } from '../types/wke';
 import { seconds } from '../ui/theme';
 
 interface SourceOption {
@@ -18,17 +18,32 @@ interface SourceOption {
   label: string;
   k: ArrayLike<number>;
   q: ArrayLike<number>;
+  atomNumber: number | null;
+  metadata: Record<string, string | number | null>;
 }
 
 export function ExportPanel({
-  spectrum, runs,
+  spectrum, runs, atomNumber, provenance, mode, speciesKey, derived,
 }: {
   spectrum: PreparedSpectrum | null;
   runs: Partial<Record<KernelType, WKEResult>>;
+  atomNumber: number | null;
+  provenance: RunProvenance | null;
+  mode: ParameterMode;
+  speciesKey: string;
+  derived: DerivedPhysics;
 }) {
   const sources: SourceOption[] = useMemo(() => {
     const out: SourceOption[] = [];
-    if (spectrum) out.push({ id: 'initial', label: 'Initial spectrum (imported)', k: spectrum.k, q: spectrum.q });
+    if (spectrum) out.push({
+      id: 'initial', label: 'Initial spectrum (current)', k: spectrum.k, q: spectrum.q,
+      atomNumber,
+      metadata: {
+        source: 'current initial spectrum', spectrum: spectrum.raw.label, mode, species: speciesKey,
+        density_um3: derived.density_um3, a_a0: derived.a_a0, na_um2: derived.na_um2,
+        atom_number: derived.N, volume_um3: derived.V_um3,
+      },
+    });
     for (const kernel of ['classical', 'quantum'] as KernelType[]) {
       const r = runs[kernel];
       if (!r) continue;
@@ -38,13 +53,32 @@ export function ExportPanel({
         const label = s.stage === 'initial'
           ? `${kernel}: t = 0`
           : s.stage === 'final'
-            ? `${kernel}: Δt₁ᐟ₂ (${seconds(s.t_s)})`
+            ? r.reachedHalf
+              ? `${kernel}: Δt₁ᐟ₂ (${seconds(s.t_s)})`
+              : `${kernel}: run limit reached (${seconds(s.t_s)})`
+            : s.stage === 'continued'
+              ? `${kernel}: continuation started (${seconds(s.t_s)})`
+              : s.stage === 'extended'
+                ? `${kernel}: extension ended (${seconds(s.t_s)})`
             : `${kernel}: k_p/k_p,0 = ${s.stage} (${seconds(s.t_s)})`;
-        out.push({ id: `${kernel}:${i}`, label, k: r.k_um_inv, q: s.q });
+        out.push({
+          id: `${kernel}:${i}`, label, k: r.k_um_inv, q: s.q,
+          atomNumber: provenance?.N ?? null,
+          metadata: {
+            source: 'solver run', kernel, stage: s.stage, time_s: s.t_s,
+            reached_half_time: r.reachedHalf ? 'true' : 'false',
+            spectrum: provenance?.spectrumLabel ?? null, mode: provenance?.mode ?? null,
+            species: provenance?.speciesKey ?? null, density_um3: provenance?.density_um3 ?? r.scales.density_um3,
+            a_a0: provenance?.a_a0 ?? null, na_um2: provenance?.na_um2 ?? r.scales.na_um2,
+            atom_number: provenance?.N ?? null, volume_um3: provenance?.V_um3 ?? null,
+            tau_max: provenance?.tauMax ?? null, rtol: provenance?.rtol ?? null,
+            snapshots: provenance?.nSnapshots ?? null, run_id: r.runId,
+          },
+        });
       }
     }
     return out;
-  }, [spectrum, runs]);
+  }, [spectrum, runs, atomNumber, provenance, mode, speciesKey, derived]);
 
   const [sourceId, setSourceId] = useState<string>(sources[0]?.id ?? '');
   useEffect(() => {
@@ -52,6 +86,7 @@ export function ExportPanel({
   }, [sources, sourceId]);
   const [convention, setConvention] = useState<ExportConvention>('Nk_over_N');
   const [kUnit, setKUnit] = useState<ExportKUnit>('um_inv');
+  const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'failed'>('idle');
 
   const active = sources.find((s) => s.id === sourceId) ?? sources[0];
 
@@ -60,14 +95,22 @@ export function ExportPanel({
     return exportProfile(active.k, active.q, {
       convention,
       kUnit,
-      atomNumber: null,
+      atomNumber: active.atomNumber,
       fallbackScale: spectrum?.rawIntegral ?? null,
     });
   }, [active, convention, kUnit, spectrum]);
 
+  const exportText = useMemo(() => {
+    if (!result || !active) return '';
+    const metadata = Object.entries(active.metadata)
+      .filter(([, value]) => value != null)
+      .map(([key, value]) => `# ${key}: ${value}`);
+    return [`# wke_export_version: 1`, ...metadata, result.csv].join('\n');
+  }, [active, result]);
+
   const download = () => {
     if (!result || !active) return;
-    const blob = new Blob([result.csv], { type: 'text/csv' });
+    const blob = new Blob([exportText], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -78,7 +121,12 @@ export function ExportPanel({
 
   const copy = async () => {
     if (!result) return;
-    await navigator.clipboard.writeText(result.csv);
+    try {
+      await navigator.clipboard.writeText(exportText);
+      setCopyStatus('copied');
+    } catch {
+      setCopyStatus('failed');
+    }
   };
 
   if (!spectrum) {
@@ -122,9 +170,14 @@ export function ExportPanel({
             <>
               <Metric label="rows" value={String(active?.k.length ?? 0)} />
               <Metric label="scale" value={result.scaleNote} />
+              <p className="text-2xs text-slate-500 dark:text-slate-400">
+                Parameter and run provenance is included as re-importable <span className="font-mono">#</span> comment lines.
+              </p>
               <div className="flex gap-2 pt-1">
                 <button className="btn-primary text-xs" onClick={download}>Download CSV</button>
                 <button className="btn-secondary text-xs" onClick={copy}>Copy to clipboard</button>
+                {copyStatus === 'copied' && <Badge tone="success">Copied</Badge>}
+                {copyStatus === 'failed' && <Badge tone="danger">Copy failed</Badge>}
               </div>
             </>
           )}
@@ -136,7 +189,7 @@ export function ExportPanel({
           readOnly
           spellCheck={false}
           className="input font-mono text-3xs h-72 resize-y"
-          value={result?.csv ?? ''}
+          value={exportText}
         />
       </Card>
     </div>

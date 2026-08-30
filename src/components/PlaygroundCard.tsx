@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Card } from '../ui/primitives';
-import { SegmentedControl } from '../ui/primitives';
+import { Card, Callout, SegmentedControl } from '../ui/primitives';
 import { Plot } from './Plot';
 import { MathBlock } from './MathBlock';
 import { DrawCanvas } from './DrawCanvas';
@@ -21,8 +20,8 @@ const QUANTITIES: Array<{ id: Quantity; label: string; math: string; log: boolea
 ];
 
 export function PlaygroundCard({
-  spectrum, presetKey, run, running, onRun, onContinue, onSpectrum,
-  kernel, onKernel, quantumAvailable,
+  spectrum, presetKey, run, running, onRun, onContinue, onStop, onSpectrum,
+  kernel, onKernel, quantumAvailable, canRun, blockedReason, runIsStale,
 }: {
   spectrum: PreparedSpectrum | null;
   presetKey: string | null;
@@ -30,10 +29,14 @@ export function PlaygroundCard({
   running: boolean;
   onRun: () => void;
   onContinue: () => void;
+  onStop: () => void;
   onSpectrum: (spectrum: PreparedSpectrum, presetKey: string | null) => void;
   kernel: KernelType;
   onKernel: (kernel: KernelType) => void;
   quantumAvailable: boolean;
+  canRun: boolean;
+  blockedReason: string | null;
+  runIsStale: boolean;
 }) {
   const [playing, setPlaying] = useState(false);
   const [frame, setFrame] = useState(0);
@@ -49,6 +52,7 @@ export function PlaygroundCard({
     setHasStarted(false);
     setPlaying(false);
     setFrame(0);
+    setEditing(false);
   }, [spectrum]);
 
   // The first control press is deliberately “Run and play”: once the worker
@@ -95,6 +99,10 @@ export function PlaygroundCard({
     if (blowup) setPlaying(false);
   }, [blowup]);
 
+  useEffect(() => {
+    if (runIsStale) setPlaying(false);
+  }, [runIsStale]);
+
   const editK = useMemo(
     () => Float64Array.from({ length: 48 }, (_, i) => (i / 47) * 6 || 1e-3),
     [],
@@ -138,6 +146,7 @@ export function PlaygroundCard({
     }), null);
     setEditing(false);
   };
+  const drawValid = drawValues.some((value) => Number.isFinite(value) && value > 0);
 
   return (
     <Card
@@ -168,34 +177,64 @@ export function PlaygroundCard({
               if (preset) onSpectrum(preset.load(), preset.key);
             }}
             aria-label="Preset state"
+            disabled={editing}
           >
+            {presetKey === null && <option value="">Custom spectrum</option>}
             {PRESETS.map((item) => (
               <option key={item.key} value={item.key}>
                 {item.name} · kₚ ≈ {item.kp_um_inv.toFixed(2)} μm⁻¹
               </option>
             ))}
           </select>
-          <button className="btn-secondary playground-edit-button text-xs px-2.5" onClick={editing ? applyEdits : beginEditing} disabled={!spectrum}>
-            {editing ? '✓ Apply edits' : '✎ Edit state'}
-          </button>
+          {editing ? (
+            <>
+              <button className="btn-ghost text-xs px-2.5" onClick={() => setEditing(false)}>Cancel</button>
+              <button className="btn-secondary playground-edit-button text-xs px-2.5" onClick={applyEdits} disabled={!drawValid}>
+                ✓ Apply edits
+              </button>
+            </>
+          ) : (
+            <button className="btn-secondary playground-edit-button text-xs px-2.5" onClick={beginEditing} disabled={!spectrum}>
+              ✎ Edit state
+            </button>
+          )}
           <button
             className="btn-primary playground-run-button text-xs min-w-20"
             onClick={() => {
-              if (!hasStarted || !run || run.snapshots.length < 2) {
+              if (running) {
+                setPlaying(false);
+                awaitingExtension.current = false;
+                onStop();
+                return;
+              }
+              if (runIsStale || !hasStarted || !run || run.snapshots.length < 2) {
                 setHasStarted(true);
                 onRun();
               }
               else setPlaying((value) => !value);
             }}
-            disabled={running || !spectrum}
+            disabled={editing || !spectrum || (!running && !canRun)}
+            title={blockedReason ?? undefined}
           >
-            {running ? 'Running…' : !hasStarted || !run || run.snapshots.length < 2
-              ? '▶ Run'
-              : playing ? '❚❚ Pause' : '▶ Play'}
+            {running ? '■ Stop run' : runIsStale
+              ? '↻ Re-run continuous preview'
+              : !hasStarted || !run || run.snapshots.length < 2
+              ? '▶ Run continuous preview'
+              : playing ? '❚❚ Pause preview' : '▶ Resume continuous preview'}
           </button>
         </div>
       }
     >
+      {runIsStale && (
+        <div className="mb-3">
+          <Callout tone="warning" title="Run is out of date">
+            Inputs changed after this run. The preview below is the previous result; re-run to update it.
+          </Callout>
+        </div>
+      )}
+      {blockedReason && !runIsStale && (
+        <div className="mb-3"><Callout tone="info">{blockedReason}</Callout></div>
+      )}
       {!k || !q ? (
         <p className="text-2xs text-slate-500 dark:text-slate-400">Choose a state in Solver, then return here to run it.</p>
       ) : (
@@ -204,6 +243,9 @@ export function PlaygroundCard({
             <span className="playground-section-label">{editing ? 'Hand-edit Nₖ(k)' : 'Current spectrum'}</span>
             <span className="flex items-center gap-2">
               {blowup && <span className="text-orange-700 dark:text-orange-300">Paused: {blowupReason}</span>}
+              {!blowup && running && <span className="text-accent-700 dark:text-accent-300">Extending trajectory…</span>}
+              {!blowup && !running && playing && <span className="text-green-700 dark:text-green-300">Continuous preview running</span>}
+              {!blowup && !running && hasStarted && !playing && <span>Continuous preview paused</span>}
               {current && <span className="font-mono">t = {current.t_s.toFixed(3)} s</span>}
             </span>
           </div>
@@ -270,7 +312,7 @@ function EditableSpectrumPanel({
   return (
     <div>
       <div className="text-2xs text-slate-500 dark:text-slate-400 mb-1">
-        <MathBlock math={item.math} /> <span className="ml-1">paint to edit</span>
+        <MathBlock math={item.math} /> <span className="ml-1">paint to edit · keyboard: ←/→ select, ↑/↓ adjust</span>
       </div>
       <div className="rounded-md border border-slate-200 dark:border-slate-800 p-1.5 bg-slate-50 dark:bg-gray-900">
         <DrawCanvas

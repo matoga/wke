@@ -19,7 +19,7 @@ export interface SliderState {
 }
 
 export function SensitivityCard({
-  mode, desc, state, base, onChange, onRestore, dirty,
+  mode, desc, state, base, onChange, onRestore, onApply, dirty,
 }: {
   mode: ParameterMode;
   desc: SpectralDescriptors | null;
@@ -28,6 +28,7 @@ export function SensitivityCard({
   base: SliderState & { dt_measured_s: number | null };
   onChange: (s: SliderState) => void;
   onRestore: () => void;
+  onApply: () => void;
   dirty: boolean;
 }) {
   if (!desc) return null;
@@ -51,7 +52,7 @@ export function SensitivityCard({
           onClick={onRestore}
           disabled={!dirty}
         >
-          Restore measured values
+          Restore inputs
         </button>
       }
     >
@@ -66,16 +67,18 @@ export function SensitivityCard({
           format={(v) => v.toPrecision(4)}
           onChange={(v) => onChange({ ...state, a_a0: v })}
         />
-        <Slider
-          label="density n"
-          unit="μm⁻³"
-          value={state.density_um3}
-          min={base.density_um3 / 10}
-          max={base.density_um3 * 10}
-          log
-          format={(v) => v.toPrecision(4)}
-          onChange={(v) => onChange({ ...state, density_um3: v })}
-        />
+        {!inverse && (
+          <Slider
+            label="density n"
+            unit="μm⁻³"
+            value={state.density_um3}
+            min={base.density_um3 / 10}
+            max={base.density_um3 * 10}
+            log
+            format={(v) => v.toPrecision(4)}
+            onChange={(v) => onChange({ ...state, density_um3: v })}
+          />
+        )}
         {inverse && dtBase != null && (
           <Slider
             label="measured Δt₁ᐟ₂ scale"
@@ -114,7 +117,14 @@ export function SensitivityCard({
         </div>
 
         {dirty && (
-          <Callout tone="warning">Values changed. Re-run to update the WKE result.</Callout>
+          <>
+            <Callout tone="warning">
+              Preview only. Apply this scenario before running the WKE.
+            </Callout>
+            <button className="btn-primary w-full justify-center text-xs" onClick={onApply}>
+              Use for next simulation
+            </button>
+          </>
         )}
       </div>
     </Card>

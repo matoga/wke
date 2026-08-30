@@ -13,6 +13,8 @@ import type { RunMode } from './components/SimulationPanel';
 import type { KernelType } from './physics/collision';
 import { ExportPanel } from './components/ExportPanel';
 import { SpectrumSummaryStrip } from './components/SpectrumSummaryStrip';
+import { RunParametersStrip } from './components/RunParametersStrip';
+import { MathBlock } from './components/MathBlock';
 import { useWKEWorker } from './hooks/useWKEWorker';
 import { computeDescriptors } from './physics/descriptors';
 import { derivePhysics, classicalRunParameters } from './physics/modes';
@@ -22,10 +24,10 @@ import {
   DEFAULT_SPECIES_KEY, REFERENCE_DENSITY_UM3, REFERENCE_A_A0,
 } from './physics/constants';
 import type { PreparedSpectrum } from './physics/spectrum';
-import type { ParameterMode } from './types/wke';
+import type { ParameterMode, RunProvenance } from './types/wke';
 import { NORM_MODES, normSpec } from './ui/norm';
 import type { NormMode } from './ui/norm';
-import { SegmentedControl } from './ui/primitives';
+import { Badge, SegmentedControl } from './ui/primitives';
 
 type Tab = 'play' | 'simulate' | 'calibrate' | 'export';
 
@@ -37,7 +39,7 @@ const TABS: Array<{ id: Tab; label: string }> = [
 ];
 
 const EMPTY_FIELDS: ParameterFields = {
-  N: '', V_um3: '', density_um3: '', a_a0: '', dt_measured_s: '',
+  N: '', V_um3: '', density_um3: '', a_a0: '', dt_measured_s: '', na_override_um2: '',
 };
 
 const DEFAULT_FIELDS: Record<ParameterMode, ParameterFields> = {
@@ -73,11 +75,12 @@ export default function App() {
   const fields = fieldsByMode[mode];
 
   const [tab, setTab] = useState<Tab>('simulate');
-  const [initialAccepted, setInitialAccepted] = useState(false);
+  const [initialDraftDirty, setInitialDraftDirty] = useState(false);
   const [runMode, setRunMode] = useState<RunMode>('classical');
   const [playKernel, setPlayKernel] = useState<KernelType>('classical');
   const [normMode, setNormMode] = useState<NormMode>('unit');
-  const { runs, state: runState, run, continueRun, cancel, clear } = useWKEWorker();
+  const solver = useWKEWorker();
+  const preview = useWKEWorker();
 
   const desc = useMemo(
     () => (spectrum ? computeDescriptors(spectrum.k, spectrum.q) : null),
@@ -86,6 +89,34 @@ export default function App() {
 
   const inputs = useMemo(() => toInputs(mode, speciesKey, fields), [mode, speciesKey, fields]);
   const derived = useMemo(() => derivePhysics(inputs, desc), [inputs, desc]);
+
+  // A completed trajectory is only current for the exact spectrum and physical
+  // configuration that produced it. Keep old results visible for comparison,
+  // but never present them as though they match edited inputs.
+  const runFingerprint = useMemo(() => JSON.stringify({
+    spectrum: spectrum ? Array.from(spectrum.q) : null,
+    mode,
+    speciesKey,
+    density_um3: derived.density_um3,
+    a_a0: derived.a_a0,
+    na_um2: derived.na_um2,
+    N: derived.N,
+    V_um3: derived.V_um3,
+  }), [spectrum, mode, speciesKey, derived]);
+  const [lastSolverFingerprint, setLastSolverFingerprint] = useState<string | null>(null);
+  const [lastPreviewFingerprint, setLastPreviewFingerprint] = useState<string | null>(null);
+  const [solverProvenance, setSolverProvenance] = useState<RunProvenance | null>(null);
+  const solverIsStale = Object.keys(solver.runs).length > 0 && lastSolverFingerprint !== runFingerprint;
+  const previewIsStale = Object.keys(preview.runs).length > 0 && lastPreviewFingerprint !== runFingerprint;
+
+  useEffect(() => {
+    if (solver.state.running && lastSolverFingerprint != null && lastSolverFingerprint !== runFingerprint) {
+      solver.cancel();
+    }
+    if (preview.state.running && lastPreviewFingerprint != null && lastPreviewFingerprint !== runFingerprint) {
+      preview.cancel();
+    }
+  }, [runFingerprint, lastSolverFingerprint, lastPreviewFingerprint, solver.state.running, preview.state.running, solver.cancel, preview.cancel]);
 
   // One display convention for every spectrum plot in the app.
   const norm = useMemo(
@@ -112,15 +143,68 @@ export default function App() {
     Math.abs(sliders.density_um3 / sliderBase.density_um3 - 1) > 1e-9 ||
     Math.abs(sliders.dtScale - 1) > 1e-9;
 
+  const applySensitivityToRun = useCallback(() => {
+    setFieldsByMode((current) => {
+      const active = current[mode];
+      if (mode === 'known_na') {
+        return {
+          ...current,
+          [mode]: {
+            ...active,
+            density_um3: sliders.density_um3.toPrecision(10),
+            a_a0: sliders.a_a0.toPrecision(10),
+          },
+        };
+      }
+      if (mode === 'known_NVa') {
+        const N = Number(active.N);
+        const V = Number.isFinite(N) && N > 0 && sliders.density_um3 > 0
+          ? N / sliders.density_um3
+          : null;
+        return {
+          ...current,
+          [mode]: {
+            ...active,
+            V_um3: V != null ? V.toPrecision(10) : active.V_um3,
+            a_a0: sliders.a_a0.toPrecision(10),
+          },
+        };
+      }
+      const dt = inputs.dt_measured_s != null
+        ? inputs.dt_measured_s * sliders.dtScale
+        : null;
+      return {
+        ...current,
+        [mode]: {
+          ...active,
+          dt_measured_s: dt != null ? dt.toPrecision(10) : active.dt_measured_s,
+          a_a0: sliders.a_a0.toPrecision(10),
+        },
+      };
+    });
+  }, [mode, sliders, inputs.dt_measured_s]);
+
   const onSpectrum = useCallback((s: PreparedSpectrum, key: string | null) => {
     setSpectrum(s);
     setPresetKey(key);
-    clear();
-    setInitialAccepted(false);
-  }, [clear]);
+    setFieldsByMode((current) => ({
+      ...current,
+      measured_dt: { ...current.measured_dt, na_override_um2: '' },
+    }));
+  }, []);
+
+  const changeSpecies = useCallback((key: string) => {
+    setSpeciesKey(key);
+    setFieldsByMode((current) => ({
+      ...current,
+      measured_dt: { ...current.measured_dt, na_override_um2: '' },
+    }));
+  }, []);
 
   const dtFormula = desc && derived.na_um2 ? predictDeltaT(desc, derived.na_um2) : null;
-  const dtForMap = mode === 'measured_dt' ? inputs.dt_measured_s : (runs.classical?.dtHalf_s ?? dtFormula);
+  const dtForMap = mode === 'measured_dt'
+    ? inputs.dt_measured_s
+    : (!solverIsStale ? solver.runs.classical?.dtHalf_s : null) ?? dtFormula;
 
   // Run configuration
   const runParams = classicalRunParameters(derived, REFERENCE_DENSITY_UM3);
@@ -129,19 +213,31 @@ export default function App() {
     ? (['classical', 'quantum'] as const)
     : ([runMode] as const);
 
-  const blockedReason = !spectrum
+  const baseBlockedReason = derived.notes[0] ?? (initialDraftDirty
+    ? 'Apply or cancel the spectrum draft before running.'
+    : !spectrum
     ? 'Load a spectrum first.'
     : derived.na_um2 == null
       ? 'Complete the parameters above to identify na.'
-      : wantQuantum && !derived.quantumAvailable
-        ? 'The quantum kernel needs n and a separately.'
-        : null;
+      : null);
+  const blockedReason = baseBlockedReason ?? (wantQuantum && !derived.quantumAvailable
+    ? 'The quantum kernel needs n and a separately.'
+    : null);
+  const playBlockedReason = baseBlockedReason ?? (playKernel === 'quantum' && !derived.quantumAvailable
+    ? 'The quantum kernel needs n and a separately.'
+    : null);
 
   const startRun = () => {
     if (!spectrum || !runParams || blockedReason) return;
     // The quantum kernel needs the true (n, a); the classical one only na.
     const useTrue = wantQuantum && derived.density_um3 != null && derived.a_a0 != null;
-    run({
+    setLastSolverFingerprint(runFingerprint);
+    setSolverProvenance({
+      origin: 'solver', spectrumLabel: spectrum.raw.label, mode, speciesKey,
+      density_um3: derived.density_um3, a_a0: derived.a_a0, na_um2: derived.na_um2,
+      N: derived.N, V_um3: derived.V_um3, tauMax: 400, rtol: 1e-7, nSnapshots: 150,
+    });
+    solver.run({
       kernels: [...kernels],
       q: Array.from(spectrum.q),
       density_um3: useTrue ? derived.density_um3! : runParams.density_um3,
@@ -154,9 +250,10 @@ export default function App() {
   };
 
   const startPlayRun = () => {
-    if (!spectrum || !runParams || blockedReason) return;
+    if (!spectrum || !runParams || playBlockedReason) return;
     const useTrue = derived.density_um3 != null && derived.a_a0 != null;
-    run({
+    setLastPreviewFingerprint(runFingerprint);
+    preview.run({
       kernels: [playKernel],
       q: Array.from(spectrum.q),
       density_um3: useTrue ? derived.density_um3! : runParams.density_um3,
@@ -171,6 +268,11 @@ export default function App() {
   };
 
   const quantumBlockedReason = 'Quantum mode requires n and a.';
+
+  const selectTab = (next: Tab) => {
+    if (tab === 'play' && next !== 'play' && preview.state.running) preview.cancel();
+    setTab(next);
+  };
 
   /* const formulaReference = (
     <footer className={clsx(
@@ -229,33 +331,27 @@ kappa   = 3.932378e-6 s*um^-2`}
   return (
     <div className="min-h-screen bg-slate-100 dark:bg-gray-950">
       <header className="sticky top-0 z-40 border-b border-slate-200/80 dark:border-slate-800 bg-white/90 dark:bg-gray-950/90 backdrop-blur-md">
-        <div className="max-w-[1440px] mx-auto px-5 h-14 flex items-center gap-4">
-          <div className="flex items-baseline gap-2 shrink-0">
+        <div className="max-w-[1440px] mx-auto px-3 sm:px-5 min-h-14 py-2 sm:py-0 flex items-center gap-2 sm:gap-4">
+          <div className="hidden sm:flex items-baseline gap-2 shrink-0">
             <span className="font-semibold text-[15px] tracking-tight">WKE Solver</span>
             <span className="hidden xl:inline text-2xs text-slate-500 dark:text-slate-400">
               box-trap volume calibration
             </span>
           </div>
 
-          <nav className="tab-bar mx-auto sm:mx-0">
+          <nav className="tab-bar min-w-0 flex-1 sm:flex-none overflow-x-auto">
             {TABS.map((t) => (
               <button
                 key={t.id}
                 className={clsx('tab-bar-item', tab === t.id && 'tab-bar-item-active')}
-                onClick={() => setTab(t.id)}
+                onClick={() => selectTab(t.id)}
               >
                 {t.label}
               </button>
             ))}
           </nav>
 
-          <div className="ml-auto flex items-center gap-2 shrink-0">
-            <SegmentedControl
-              size="xs"
-              value={normMode}
-              onChange={setNormMode}
-              options={NORM_MODES.map((m) => ({ id: m.id, label: m.label, title: m.title }))}
-            />
+          <div className="ml-auto flex items-center shrink-0">
             <button className="btn-ghost p-1.5 text-xs" onClick={toggle}
               aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'}>
               {dark ? '☀' : '☾'}
@@ -264,24 +360,51 @@ kappa   = 3.932378e-6 s*um^-2`}
         </div>
       </header>
 
-      <main className="max-w-[1440px] mx-auto px-5 py-4 space-y-4">
+      <main className="max-w-[1440px] mx-auto px-3 sm:px-5 py-4 space-y-4">
+        {(tab === 'play' || tab === 'simulate') && (
+          <RunParametersStrip
+            mode={mode}
+            speciesKey={speciesKey}
+            derived={derived}
+            stale={tab === 'play' ? previewIsStale : solverIsStale}
+            onEdit={() => setTab('calibrate')}
+          />
+        )}
         {tab === 'play' && (
           <PlaygroundCard
             spectrum={spectrum}
             presetKey={presetKey}
-            run={runs[playKernel]}
-            running={runState.running}
+            run={preview.runs[playKernel]}
+            running={preview.state.running}
             onRun={startPlayRun}
-            onContinue={() => continueRun()}
+            onContinue={() => preview.continueRun()}
+            onStop={preview.cancel}
             onSpectrum={onSpectrum}
             kernel={playKernel}
             onKernel={setPlayKernel}
             quantumAvailable={derived.quantumAvailable}
+            canRun={playBlockedReason == null}
+            blockedReason={playBlockedReason}
+            runIsStale={previewIsStale}
           />
         )}
 
         {tab === 'simulate' && (
           <>
+            <div className="flex flex-wrap items-center justify-end gap-2" aria-label="Solver spectrum display controls">
+              <span className="text-2xs font-medium text-slate-500 dark:text-slate-400">Spectrum display</span>
+              <SegmentedControl
+                size="xs"
+                value={normMode}
+                onChange={setNormMode}
+                options={NORM_MODES.map((m) => ({
+                  id: m.id,
+                  label: <MathBlock math={m.id === 'unit' ? 'N_k/N' : 'N_k'} />,
+                  title: m.title,
+                }))}
+              />
+              {norm.fellBack && <Badge tone="warning">{norm.source}</Badge>}
+            </div>
             <div className="grid grid-cols-1 gap-4 items-start">
               <InitialStateCard
                 spectrum={spectrum}
@@ -290,34 +413,24 @@ kappa   = 3.932378e-6 s*um^-2`}
                 onSpectrum={onSpectrum}
                 presetKey={presetKey}
                 onPresetKey={setPresetKey}
-                requireAcceptance
-                accepted={initialAccepted}
-                onAccept={() => setInitialAccepted(true)}
-                onEdit={() => setInitialAccepted(false)}
+                onDraftChange={setInitialDraftDirty}
               />
             </div>
-            {initialAccepted ? <div className="card-stage-enter"><SimulationPanel
-                runs={runs}
-                runState={runState}
+            <div className="card-stage-enter"><SimulationPanel
+                runs={solver.runs}
+                runState={solver.state}
                 runMode={runMode}
                 onRunMode={setRunMode}
                 onRun={startRun}
-                onCancel={cancel}
-                onContinue={() => continueRun()}
+                onCancel={solver.cancel}
+                onContinue={() => solver.continueRun()}
                 norm={norm}
                 quantumAvailable={derived.quantumAvailable}
                 quantumBlockedReason={quantumBlockedReason}
                 canRun={blockedReason == null}
                 blockedReason={blockedReason}
-              /></div> : (
-              <div className="card card-stage-enter px-5 py-4 flex items-center gap-3 text-slate-400 dark:text-slate-500">
-                <span className="w-6 h-6 rounded-full border border-current flex items-center justify-center text-xs font-semibold">2</span>
-                <div>
-                  <div className="text-xs font-medium">Run simulation</div>
-                  <div className="text-2xs mt-0.5">Accept the initial state above to continue.</div>
-                </div>
-              </div>
-            )}
+                runIsStale={solverIsStale}
+              /></div>
           </>
         )}
 
@@ -334,7 +447,7 @@ kappa   = 3.932378e-6 s*um^-2`}
                 mode={mode}
                 onMode={setMode}
                 speciesKey={speciesKey}
-                onSpecies={setSpeciesKey}
+                onSpecies={changeSpecies}
                 fields={fields}
                 onFields={(f) => setFieldsByMode({ ...fieldsByMode, [mode]: f })}
                 derived={derived}
@@ -349,6 +462,7 @@ kappa   = 3.932378e-6 s*um^-2`}
                 onChange={setSliders}
                 onRestore={() => setSliders(sliderBase)}
                 dirty={slidersDirty}
+                onApply={applySensitivityToRun}
               />
             </div>
 
@@ -358,7 +472,9 @@ kappa   = 3.932378e-6 s*um^-2`}
                 desc={desc}
                 derived={derived}
                 dtMeasured_s={inputs.dt_measured_s}
-                runs={runs}
+                runs={solver.runs}
+                runIsStale={solverIsStale}
+                usingRefinedNa={Boolean(fields.na_override_um2)}
               />
 
               <CalibrationMapCard desc={desc} na_um2={derived.na_um2} dt_half_s={dtForMap} />
@@ -367,7 +483,15 @@ kappa   = 3.932378e-6 s*um^-2`}
         )}
 
         {tab === 'export' && (
-          <ExportPanel spectrum={spectrum} runs={runs} />
+          <ExportPanel
+            spectrum={spectrum}
+            runs={solver.runs}
+            atomNumber={derived.N}
+            provenance={solverProvenance}
+            mode={mode}
+            speciesKey={speciesKey}
+            derived={derived}
+          />
         )}
       </main>
     </div>

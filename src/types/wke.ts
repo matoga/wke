@@ -113,6 +113,8 @@ export interface PhysicsInputs {
   density_um3: number | null;
   a_a0: number | null;
   dt_measured_s: number | null;
+  /** Optional simulation-refined inverse result; only used in measured_dt mode. */
+  na_override_um2?: number | null;
 }
 
 export interface DerivedPhysics {
@@ -125,4 +127,20 @@ export interface DerivedPhysics {
   /** true when n and a are separately known, so the quantum kernel is meaningful */
   quantumAvailable: boolean;
   notes: string[];
+}
+
+/** Immutable description of the inputs that produced a saved run artifact. */
+export interface RunProvenance {
+  origin: 'solver' | 'playground';
+  spectrumLabel: string;
+  mode: ParameterMode;
+  speciesKey: string;
+  density_um3: number | null;
+  a_a0: number | null;
+  na_um2: number | null;
+  N: number | null;
+  V_um3: number | null;
+  tauMax: number;
+  rtol: number;
+  nSnapshots: number;
 }

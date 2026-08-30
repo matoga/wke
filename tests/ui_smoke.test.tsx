@@ -65,7 +65,9 @@ class WorkerStub {
           data: {
             type: 'result', runId: req.runId, kernel: req.kernel,
             k_um_inv: k, kp0_um_inv: 2,
-            reachedHalf: true, tauHalf: 0.3, dtHalf_s: 0.3,
+            reachedHalf: req.kernel !== 'quantum',
+            tauHalf: req.kernel !== 'quantum' ? 0.3 : null,
+            dtHalf_s: req.kernel !== 'quantum' ? 0.3 : null,
             snapshots: [snapshot(1, 'initial'), snapshot(0.5, 'final')],
             kpTrack: { t_s: [0, 0.3], kp: [2, 1] },
             scales: { xi_um: 2.3, t0_s: 6.5e-3, ncal: 1367.7, na_um2: 7.5e-3, density_um3: 2.8331 },
@@ -73,7 +75,7 @@ class WorkerStub {
             geometry_ms: 5, nEvents: 1000, gridCoverage: 1, maxDN: 0, maxDE: 0,
           },
         } as MessageEvent);
-      }, 0);
+      }, 5);
       return;
     }
     if (req.type === 'continue') {
@@ -177,23 +179,22 @@ if (drawSource) {
   await click(drawSource);
   check('draw mode reuses the main spectrum plot', text().includes('Draw directly on the spectrum plot'));
   check('draw mode does not show CSV import', !text().includes('Drop a CSV here'));
-  check('draw mode applies automatically', byText('Use this shape') == null && text().includes('applied automatically'));
-  await click(byText('Examples')!);
+  await click(byText('Clear')!);
+  check('draw edits remain an explicit draft', text().includes('unsaved shape draft'));
+  check('empty draft cannot replace the active spectrum', byText('Apply shape')?.hasAttribute('disabled') === true);
+  check('solver cannot run with an unapplied draft', byText('Run classical')?.hasAttribute('disabled') === true);
+  await click(byText('Cancel edits')!);
 }
 check('initial state has shape controls', byText('Smooth') != null && byText('Sharpen') != null);
 
 check('initial state panel on top',
   (cards()[0]?.textContent ?? '').includes('Initial state'),
   `first panel was: ${(cards()[0]?.textContent ?? '').slice(0, 40)}`);
-check('simulation is locked before accepting the state',
-  text().includes('Accept the initial state above to continue.'));
-await click(byText('Accept initial state'));
-check('accepted state collapses to a summary',
-  text().includes('Simon Set 93') && byText('Edit state') != null);
-check('simulation unlocks after acceptance', byText('Run') != null);
-await click(cards()[0]);
-check('clicking the collapsed initial-state card reopens it for editing', byText('Smooth') != null);
-await click(byText('Accept initial state'));
+check('simulation is available without an acceptance gate', byText('Run classical') != null);
+check('initial state can still be collapsed', byText('Collapse') != null);
+await click(byText('Collapse'));
+check('collapsed initial state can be expanded', byText('Expand') != null);
+await click(byText('Expand'));
 
 check('no bare q(k) label on the Simulate tab', !/\bq\(k/.test(text()), 'found a q(k) label');
 check('spectra labelled N_k', text().includes('N_k'));
@@ -202,6 +203,11 @@ await click(byText('Play'));
 check('playground tab opens as a single card', cards().length === 1 && (cards()[0]?.textContent ?? '').includes('Play'));
 check('playground has a preset selector', selects().some((select) => select.getAttribute('aria-label') === 'Preset state'));
 check('playground can run the current state', byText('Run') != null);
+await click(byText('Edit state')!);
+check('playground edit can be cancelled', byText('Cancel') != null);
+check('playground locks preset switching during a draft',
+  selects().find((select) => select.getAttribute('aria-label') === 'Preset state')?.disabled === true);
+await click(byText('Cancel')!);
 await click(byText('Solve'));
 
 await click(byText('Run'));
@@ -214,7 +220,25 @@ check('completed solve does not offer a redundant re-run', byText('Re-run') == n
 check('playback is time-based, not a snapshot index', /Playback: 0 to/.test(text()));
 check('no snapshot-count scrubber label remains', !text().includes('saved snapshots'), 'still calls them "saved snapshots"');
 
-const continueBtn = byText('Simulate further');
+await click(byText('Both')!);
+await click(byText('Run both')!);
+await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
+await click(byText('Quantum')!);
+check('selected kernel controls the displayed trajectory', text().includes('Displaying quantum trajectory'));
+check('non-crossing endpoint is labelled as the run limit', text().includes('run limit reached'));
+check('non-crossing endpoint is not labelled as half-time', !text().includes('half-time reached'));
+await click(byText('Classical')!);
+
+await click(byText('Play')!);
+check('playground names continuous preview explicitly', byText('Run continuous preview') != null);
+await click(byText('Run')!);
+check('playground offers Stop run while preview computation is active', byText('Stop run') != null);
+await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
+check('playground reports continuous preview status', text().includes('Continuous preview running'));
+await click(byText('Solve')!);
+check('playground preview does not replace the solver artifact', byText('Continue run') != null && byText('Run classical') == null);
+
+const continueBtn = byText('Continue run');
 check('continue control present once a run exists', continueBtn != null);
 if (continueBtn) {
   const totalBefore = /Playback: 0 to ([0-9.]+ ?\w*)/.exec(text())?.[1];
@@ -240,16 +264,28 @@ if (allTimesBtn) {
 }
 }
 
-const normButtons = () => buttons().filter((b) => ['N_k / N', 'N_k'].includes((b.textContent ?? '').trim()));
+// A physical-parameter edit invalidates, but does not silently replace, the old run.
+await click(byText('Edit parameters')!);
+const measuredA = numberInputs().find((input) => input.placeholder === 'Required for volume');
+if (measuredA) await setInput(measuredA, '55');
+await click(byText('Solve')!);
+check('changed parameters mark the run out of date', text().includes('Run is out of date'));
+check('changed parameters offer an explicit re-run', byText('Re-run classical') != null);
+check('stale trajectory cannot be continued', byText('Continue run')?.hasAttribute('disabled') === true);
+
+const normButtons = () => Array.from(
+  container.querySelectorAll('[aria-label="Solver spectrum display controls"] button'),
+) as HTMLButtonElement[];
 check('normalization switch present', normButtons().length === 2, `found ${normButtons().length} options`);
+check('normalization switch uses typeset math', normButtons().every((button) => button.querySelector('.katex') != null));
 check('unit norm is the default', text().includes('∫ dk = 1') || text().includes('normalized to'));
-await click(normButtons().find((b) => (b.textContent ?? '').trim() === 'N_k'));
+await click(normButtons()[1]);
 check('experimental norm explains its scale',
   text().includes('imported column') || text().includes('scaled to N ='));
-await click(normButtons().find((b) => (b.textContent ?? '').trim() === 'N_k / N'));
+await click(normButtons()[0]);
 
 // Formula certification belongs to formula evaluation, not state import.
-await click(byText('Edit state'));
+if (byText('Expand')) await click(byText('Expand'));
 const presetSelect = selects().find((sel) =>
   Array.from(sel.options).some((o) => o.value === 'canonical_gaussian'))!;
 const highKp = Array.from(presetSelect.options).find((o) => o.value === 'prepared_state_7');
@@ -267,18 +303,50 @@ const volumeMode = () => buttons().find((b) =>
   (b.closest('section')?.textContent ?? '').includes('System parameters'));
 check('spectrum summary strip shown', text().includes('Using') && text().includes('Prepared State 7'));
 check('no bare q(k) label on the Calibrate tab', !/\bq\(k/.test(text()), 'found a q(k) label');
-check('volume-calibration result shown', text().includes('Inferred interaction parameter') && text().includes('derived V'));
+check('volume-calibration result shown', text().includes('Calibration result') && text().includes('derived V'));
+check('calibration separates input, formula, and refinement',
+  ['Measured half-time', 'Formula estimate: na', 'Simulation-refined: na'].every((label) => text().includes(label)));
 
 await click(byText('Known volume'));
 check('cylinder geometry toggle present', byText('from R, L →') != null);
+const directVolumeBefore = numberInputs().find((input) => input.placeholder === 'e.g. 3.5e4')?.value;
 await click(byText('from R, L →'));
 check('cylinder geometry fields shown', text().includes('Cylinder geometry') && text().includes('ratio R/L'));
+check('cylinder geometry is preview-only until applied', text().includes('Preview only'));
+await click(byText('enter V directly →')!);
+check('opening cylinder mode does not overwrite volume',
+  numberInputs().find((input) => input.placeholder === 'e.g. 3.5e4')?.value === directVolumeBefore);
+await click(byText('from R, L →')!);
+const cylinderLength = numberInputs().find((input) => input.placeholder === '300');
+if (cylinderLength) await setInput(cylinderLength, '100');
+await click(byText('Apply cylinder volume')!);
+await click(byText('enter V directly →')!);
+check('cylinder volume changes only after Apply',
+  numberInputs().find((input) => input.placeholder === 'e.g. 3.5e4')?.value !== directVolumeBefore);
 await click(byText('Known density'));
+const sensitivityCard = cards().find((card) => (card.textContent ?? '').includes('Sensitivity'));
+const sensitivityRanges = Array.from(sensitivityCard?.querySelectorAll('input[type="range"]') ?? []) as HTMLInputElement[];
+if (sensitivityRanges[0]) await setInput(sensitivityRanges[0], '650');
+check('sensitivity changes are clearly preview-only', text().includes('Preview only'));
+check('sensitivity scenario can be applied to the run inputs', byText('Use for next simulation') != null);
+await click(byText('Use for next simulation')!);
+check('applied sensitivity scenario becomes the new baseline', byText('Use for next simulation') == null);
+const knownDensityA = numberInputs().find((input) => input.placeholder === '50');
+if (knownDensityA) await setInput(knownDensityA, '0');
+check('invalid physical inputs explain why running is blocked', text().includes('Scattering length a must be positive'));
+if (knownDensityA) await setInput(knownDensityA, '50');
 
 await click(volumeMode());
 check('inverse mode renders', text().includes('inferred na'));
+check('inverse sensitivity omits the ineffective density slider',
+  (cards().find((card) => (card.textContent ?? '').includes('Sensitivity'))?.querySelectorAll('input[type="range"]').length ?? 0) === 2);
 check('inverse mode explains missing V', text().includes('needs a and N') || text().includes('derived V'));
 check('refine-with-simulation control present', byText('Refine with simulation') != null);
+await click(byText('Refine with simulation')!);
+await act(async () => { await new Promise((r) => setTimeout(r, 50)); });
+check('refined calibration can be adopted', byText('Use simulation-refined value') != null);
+await click(byText('Use simulation-refined value')!);
+check('adopted refined na becomes the active result', text().includes('Active na: simulation-refined value') && text().includes('active value'));
 
 const aField = numberInputs().find((i) => i.placeholder === 'Required for volume');
 if (aField) {
@@ -292,6 +360,11 @@ if (aField) {
 await click(byText('Export'));
 check('export panel renders', byText('Download CSV') != null);
 check('export offers the radial n_k convention', text().includes('radial density'));
+const exportPreview = container.querySelector('textarea[readonly]') as HTMLTextAreaElement | null;
+check('export includes re-importable provenance comments', exportPreview?.value.startsWith('# wke_export_version: 1') === true);
+const exportConvention = selects().find((select) => Array.from(select.options).some((option) => option.value === 'Nk'));
+if (exportConvention) await setSelect(exportConvention, 'Nk');
+check('absolute export uses the known atom number', text().includes('scaled to N = 100000'));
 
 await act(async () => { root.unmount(); });
 

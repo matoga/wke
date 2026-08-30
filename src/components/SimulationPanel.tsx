@@ -15,18 +15,18 @@ import { spectralExtent } from '../physics/descriptors';
 import { applyNorm } from '../ui/norm';
 import type { NormSpec } from '../ui/norm';
 
-function stageName(stage: string): string {
+function stageName(stage: string, reachedHalf: boolean): string {
   if (stage === 'initial') return 'initial peak';
   if (stage === 'continued') return 'resumed here';
-  if (stage === 'final') return 'half-time reached';
+  if (stage === 'final') return reachedHalf ? 'half-time reached' : 'run limit reached';
   if (stage === 'extended') return 'extension ends';
   return `peak ratio ${stage}`;
 }
 
-function StageLabel({ stage }: { stage: string }) {
+function StageLabel({ stage, reachedHalf }: { stage: string; reachedHalf: boolean }) {
   if (stage === 'initial') return <MathBlock math="k_{p,0}" />;
   if (stage === 'continued') return <>resumed here</>;
-  if (stage === 'final') return <MathBlock math="\Delta t_{1/2}" />;
+  if (stage === 'final') return reachedHalf ? <MathBlock math="\Delta t_{1/2}" /> : <>run limit reached</>;
   if (stage === 'extended') return <>extension ends</>;
   return <><MathBlock math="k_p/k_{p,0}" /> = {stage}</>;
 }
@@ -71,6 +71,7 @@ export interface RunState {
 export function SimulationPanel({
   runs, runState, runMode, onRunMode, onRun, onCancel, onContinue, norm,
   quantumAvailable, quantumBlockedReason, canRun, blockedReason,
+  runIsStale,
 }: {
   runs: Partial<Record<KernelType, WKEResult>>;
   norm: NormSpec;
@@ -84,8 +85,11 @@ export function SimulationPanel({
   quantumBlockedReason: string;
   canRun: boolean;
   blockedReason: string | null;
+  runIsStale: boolean;
 }) {
-  const primary = runs.classical ?? runs.quantum;
+  const primary = runMode === 'quantum'
+    ? runs.quantum ?? runs.classical
+    : runs.classical ?? runs.quantum;
   const snapshots = primary?.snapshots ?? [];
   const totalTime = snapshots.length > 0 ? snapshots[snapshots.length - 1].t_s : 0;
 
@@ -338,7 +342,7 @@ export function SimulationPanel({
 
   return (
     <Card
-      title="2 · WKE simulation"
+      title="WKE simulation"
       subtitle="Direct wave kinetic equation solve."
       actions={
         <div className="flex items-center gap-2">
@@ -353,11 +357,11 @@ export function SimulationPanel({
             ]}
           />
           {runState.running ? (
-            <button className="btn-secondary text-xs" onClick={onCancel}>Cancel</button>
-          ) : !selectedRunExists && (
+            <button className="btn-secondary text-xs" onClick={onCancel}>Stop run</button>
+          ) : (!selectedRunExists || runIsStale) && (
             <button className="btn-primary text-xs" onClick={onRun} disabled={!canRun} title={blockedReason ?? undefined}>
-              {Object.keys(runs).length === 0
-                ? 'Run'
+              {runIsStale
+                ? `Re-run ${runMode === 'both' ? 'both' : runMode}`
                 : runMode === 'both' ? 'Run both' : `Run ${runMode}`}
             </button>
           )}
@@ -367,6 +371,12 @@ export function SimulationPanel({
       <div className="space-y-3">
         {blockedReason && !runState.running && (
           <Callout tone="info">{blockedReason}</Callout>
+        )}
+
+        {runIsStale && !runState.running && (
+          <Callout tone="warning" title="Run is out of date">
+            Inputs changed after this run. The plots below are the previous result; re-run to update them.
+          </Callout>
         )}
 
         {!quantumAvailable && (
@@ -400,6 +410,9 @@ export function SimulationPanel({
 
         {primary && snap && initial && (
           <>
+            <div className="flex justify-end">
+              <Badge tone="info">Displaying {primary.kernel} trajectory</Badge>
+            </div>
             <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(168px, 1fr))' }}>
               {(['classical', 'quantum'] as KernelType[]).map((k) => {
                 const r = runs[k];
@@ -502,7 +515,9 @@ export function SimulationPanel({
                       {stageMarks.map((group) => {
                         const position = totalTime > 0 ? Math.max(0, Math.min(100, group.time / totalTime * 100)) : 0;
                         const active = group.marks.some((mark) => idx === mark.i);
-                        const accessibleNames = group.marks.map((mark) => stageName(mark.stage)).join(', ');
+                        const accessibleNames = group.marks
+                          .map((mark) => stageName(mark.stage, primary.reachedHalf))
+                          .join(', ');
                         return (
                           <button
                             key={`${group.time}-${accessibleNames}`}
@@ -517,7 +532,7 @@ export function SimulationPanel({
                             <span className="timeline-event-popover" role="tooltip">
                               {group.marks.map((mark) => (
                                 <span key={`${mark.i}-${mark.stage}`} className="block whitespace-nowrap">
-                                  <StageLabel stage={mark.stage} />
+                                  <StageLabel stage={mark.stage} reachedHalf={primary.reachedHalf} />
                                 </span>
                               ))}
                               <span className="mt-0.5 block whitespace-nowrap font-mono text-[9px] font-normal text-slate-400 dark:text-slate-500">
@@ -531,10 +546,12 @@ export function SimulationPanel({
                     <button
                       className="btn-primary mt-0.5 whitespace-nowrap px-3 py-1 text-2xs"
                       onClick={onContinue}
-                      disabled={runState.running}
-                      title="Resume from the exact final solver state for the same number of adaptive steps."
+                      disabled={runState.running || runIsStale}
+                      title={runIsStale
+                        ? 'Re-run with the current settings before extending the trajectory.'
+                        : 'Resume from the exact final solver state for the same number of adaptive steps.'}
                     >
-                      {runState.running ? 'Simulating…' : 'Simulate further'}
+                      {runState.running ? 'Running…' : 'Continue run'}
                     </button>
                   </div>
                 </>

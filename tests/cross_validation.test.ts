@@ -345,6 +345,22 @@ section('Parameter modes');
     naOnly.density_um3 === null && naOnly.V_um3 === null,
     `n=${naOnly.density_um3} V=${naOnly.V_um3}`);
   check('na-only mode disables quantum', !naOnly.quantumAvailable, 'quantumAvailable=false');
+
+  const invalidA = derivePhysics(
+    { mode: 'known_na', speciesKey: 'K39', N: null, V_um3: null, density_um3: n, a_a0: 0, dt_measured_s: null },
+    d,
+  );
+  check('non-positive a is rejected before a run',
+    invalidA.na_um2 === null && invalidA.notes.some((note) => note.includes('must be positive')),
+    invalidA.notes.join('; '));
+
+  const refinedNa = META.na_ref_um2 * 1.08;
+  const refined = derivePhysics(
+    { mode: 'measured_dt', speciesKey: 'K39', N, V_um3: null, density_um3: null, a_a0: 50, dt_measured_s: dtRef, na_override_um2: refinedNa },
+    d,
+  );
+  relClose('measured mode adopts a simulation-refined na', refined.na_um2!, refinedNa, 1e-14);
+  relClose('refined na propagates to density', refined.density_um3!, n * 1.08, 1e-12);
 }
 
 // --------------------------------------------------------- WKE solver ---

@@ -142,6 +142,7 @@ export function Plot({
   const ref = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(560);
   const [cursor, setCursor] = useState<{ px: number; x: number } | null>(null);
+  const [keyboardIndex, setKeyboardIndex] = useState(0);
   const lastPaint = useRef<{ index: number; value: number } | null>(null);
   const paintedValues = useRef<number[] | null>(null);
 
@@ -273,6 +274,32 @@ export function Plot({
     setCursor({ px, x: invX(px) });
   };
 
+  const onPlotKeyDown = (event: React.KeyboardEvent<SVGSVGElement>) => {
+    const target = editableSeries
+      ? series.find((item) => item.id === editableSeries.id)
+      : series.find((item) => !item.decorative);
+    if (!target) return;
+    const count = Math.min(target.x.length, target.y.length);
+    if (count === 0) return;
+    let nextIndex = Math.min(keyboardIndex, count - 1);
+    if (event.key === 'ArrowLeft') nextIndex = Math.max(0, nextIndex - 1);
+    else if (event.key === 'ArrowRight') nextIndex = Math.min(count - 1, nextIndex + 1);
+    else if ((event.key === 'ArrowUp' || event.key === 'ArrowDown') && editableSeries) {
+      const min = editableSeries.min ?? dy0;
+      const max = editableSeries.max ?? dy1;
+      const step = (max - min) / 50;
+      const next = Array.from(target.y);
+      next[nextIndex] = Math.min(max, Math.max(min,
+        next[nextIndex] + (event.key === 'ArrowUp' ? step : -step)));
+      editableSeries.onChange(next);
+      editableSeries.onCommit?.(next);
+    } else return;
+    setKeyboardIndex(nextIndex);
+    const x = target.x[nextIndex];
+    setCursor({ px: sx(x), x });
+    event.preventDefault();
+  };
+
   const paintAt = useCallback((clientX: number, clientY: number, svg: SVGSVGElement) => {
     if (!editableSeries) return;
     const target = series.find((item) => item.id === editableSeries.id);
@@ -322,7 +349,9 @@ export function Plot({
         height={resolvedHeight}
         viewBox={`0 0 ${width} ${resolvedHeight}`}
         role="img"
-        aria-label={`${yLabel} versus ${xLabel}`}
+        tabIndex={0}
+        aria-label={`${yLabel} versus ${xLabel}. Use left and right arrow keys to inspect values${editableSeries ? '; use up and down arrows to edit' : ''}.`}
+        onKeyDown={onPlotKeyDown}
         onMouseMove={onMove}
         onMouseLeave={() => setCursor(null)}
         onPointerDown={editableSeries ? (event) => {
@@ -531,6 +560,8 @@ export function Plot({
       </div>
       <div className="h-5 overflow-hidden px-1 text-right">
         <span
+          role="status"
+          aria-live="polite"
           className={clsx(
             'whitespace-nowrap font-mono text-2xs tabular-nums text-slate-500 dark:text-slate-400',
             !(cursor && readout && readout.length > 0) && 'invisible',
