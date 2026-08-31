@@ -26,7 +26,7 @@ import { buildInitialF, runWKE } from '../src/physics/integrator';
 import { derivePhysics } from '../src/physics/modes';
 import { prepareFromText, prepareSpectrum } from '../src/physics/spectrum';
 import { PRESETS } from '../src/physics/presets';
-import { SPECIES, BOHR_RADIUS_UM, P_MIN, P_MAX, N_GRID, NQ_LOW, NQ_HIGH } from '../src/physics/constants';
+import { SPECIES, BOHR_RADIUS_UM, P_MIN, P_MAX, N_GRID, NQ_LOW, NQ_HIGH, REFERENCE_XI_UM, solverPMax } from '../src/physics/constants';
 import type { KernelType } from '../src/physics/collision';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -106,6 +106,10 @@ section('Units and scales');
   relClose('na matches Python', s.na_um2, META.na_ref_um2, 1e-12);
   // ξ = 1/√(8π n a) is the closed form the Python property uses.
   relClose('ξ closed form', s.xi_um, 1 / Math.sqrt(8 * Math.PI * META.density_um3 * s.a_um), 1e-12);
+  relClose('reference conditions retain canonical p_max', solverPMax(REFERENCE_XI_UM), P_MAX, 1e-14);
+  relClose('weak coupling retains reference physical k_max',
+    solverPMax(2.5 * REFERENCE_XI_UM) / (2.5 * REFERENCE_XI_UM),
+    P_MAX / REFERENCE_XI_UM, 1e-14);
 }
 
 // ------------------------------------------------------ collision operator ---
@@ -442,6 +446,32 @@ section('Classical na-invariance');
     results.push(res.dtHalf_s!);
   }
   relClose('classical Δt₁ᐟ₂ depends on n, a only via na', results[1], results[0], 2e-3);
+}
+
+// Weak coupling used to leave only k_max ~= 3.49 um^-1 for this case.  The
+// direct cascade then struck the collision cutoff and produced O(1) moment
+// drift even though the initial spectrum itself had full grid coverage.
+section('Weak-coupling grid headroom');
+{
+  const density = 400_000 / 140_000;
+  const scales = computeScales(density, 8, SPECIES.K39);
+  const pMax = solverPMax(scales.xi_um);
+  const pWeak = logarithmicGrid(P_MIN, pMax, N_GRID);
+  const kWeak = Float64Array.from(pWeak, (p) => p / scales.xi_um);
+  const qRaw = Float64Array.from(kWeak, (k) => Math.exp(-0.5 * ((k - 1.5) / 0.21) ** 2));
+  const q = normalizeQ(qRaw, kWeak);
+  const f0 = buildInitialF(q, kWeak, density);
+  const weakGeom = buildGeometry(pWeak, pMax / Math.SQRT2, scales.ncal, NQ_LOW, NQ_HIGH);
+  const res = runWKE({
+    kernel: 'quantum', geom: weakGeom, t0_s: scales.t0_s, xi_um: scales.xi_um,
+    kp0_um_inv: peakMomentumFromF(kWeak, f0), f0, tauMax: 400,
+    rtol: 1e-7, atol: 1e-10,
+  });
+  check('weak-coupling quantum run reaches k_p,0/2', res.reachedHalf, `tau=${res.tauHalf}`);
+  check('weak-coupling particle drift remains below 5%', res.maxDN < 0.05,
+    `max drift=${(100 * res.maxDN).toFixed(3)}%`);
+  check('weak-coupling energy drift remains below 5%', res.maxDE < 0.05,
+    `max drift=${(100 * res.maxDE).toFixed(3)}%`);
 }
 
 // Continuing a finished run must reproduce a single longer run of the same

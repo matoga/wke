@@ -100,6 +100,20 @@ export const NQ_LOW = 16;
 export const NQ_HIGH = 16;
 
 /**
+ * Keep at least the reference physical-k range when the healing length grows.
+ *
+ * A fixed p_max makes k_max = p_max / xi collapse at weak coupling.  The
+ * initial spectrum can still be fully covered in that case while the
+ * energy-carrying direct cascade runs into the collision cutoff during the
+ * solve, causing very large number and energy drift.  Scaling p_max with xi
+ * preserves the reference k cutoff; for xi below the reference value the
+ * canonical p range is retained.
+ */
+export function solverPMax(xi_um: number): number {
+  return P_MAX * Math.max(1, xi_um / REFERENCE_XI_UM);
+}
+
+/**
  * Healing length of the reference conditions (n = 2.8331 μm⁻³, a = 50 a₀, ³⁹K).
  * The canonical descriptor grid is the solver grid at these conditions, which
  * makes browser descriptors reproduce the Python fixture values exactly.

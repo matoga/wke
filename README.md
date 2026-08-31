@@ -342,10 +342,11 @@ another species is supported and the mass enters the simulation correctly, but t
 that the formula and the simulation will then differ by roughly the mass ratio. Species
 constants live in one table in `src/physics/constants.ts`.
 
-**Solver grid coverage.** The solver grid is fixed in $p = k\xi$, so its physical $k$ range
-moves with the healing length. Far from the reference conditions a spectrum can fall partly
-outside it; the fraction of $\int q\,dk$ actually captured is computed and a warning is shown
-when it drops below 99%.
+**Solver grid coverage.** The solver grid is expressed in $p = k\xi$. Its upper bound grows at
+weak coupling so that it always retains at least the reference physical $k$ range; this gives
+the energy-carrying direct cascade room above the initial spectrum. The fraction of
+$\int q\,dk$ captured initially is also computed and a warning is shown when it drops below
+99%.
 
 **Conservation.** Number and energy moments drift by $10^{-3}$–$10^{-2}$ over a run. This is
 the truncated-grid discretization error of the reference scheme, not a solver defect, and the

@@ -18,13 +18,10 @@ import { computeScales } from '../physics/scales';
 import { peakMomentumFromF, DESCRIPTOR_GRID } from '../physics/descriptors';
 import { buildInitialF, runWKE } from '../physics/integrator';
 import type { IntegrationResult } from '../physics/integrator';
-import { SPECIES, DEFAULT_SPECIES_KEY, P_MIN, P_MAX, N_GRID, NQ_LOW, NQ_HIGH } from '../physics/constants';
+import { SPECIES, DEFAULT_SPECIES_KEY, P_MIN, N_GRID, NQ_LOW, NQ_HIGH, solverPMax } from '../physics/constants';
 import type { WKERequest, WKEProgress, WKEResult, WKEError } from '../types/wke';
 
-const P_GRID = logarithmicGrid(P_MIN, P_MAX, N_GRID);
-const P_COLL_MAX = P_MAX / Math.SQRT2;
-
-let cache: { ncal: number; geom: CollisionGeometry } | null = null;
+let cache: { ncal: number; pMax: number; geom: CollisionGeometry } | null = null;
 const lastF: Partial<Record<KernelType, Float64Array>> = {};
 // A continuation intentionally gets the same accepted-step budget as the
 // original run. Its physical duration may shrink as the adaptive integrator
@@ -34,11 +31,19 @@ const continuationSteps: Partial<Record<KernelType, number>> = {};
 const snapshotIntervals: Partial<Record<KernelType, number>> = {};
 const continuationRtol: Partial<Record<KernelType, number>> = {};
 
-function geometryFor(ncal: number, post: (m: WKEProgress) => void, runId: string): CollisionGeometry {
-  if (cache && Math.abs(cache.ncal / ncal - 1) < 1e-12) return cache.geom;
+function geometryFor(
+  ncal: number,
+  pMax: number,
+  post: (m: WKEProgress) => void,
+  runId: string,
+): CollisionGeometry {
+  if (cache && Math.abs(cache.ncal / ncal - 1) < 1e-12 && Math.abs(cache.pMax / pMax - 1) < 1e-12) {
+    return cache.geom;
+  }
   post({ type: 'progress', runId, phase: 'geometry', pct: 0 });
-  const geom = buildGeometry(P_GRID, P_COLL_MAX, ncal, NQ_LOW, NQ_HIGH);
-  cache = { ncal, geom };
+  const pGrid = logarithmicGrid(P_MIN, pMax, N_GRID);
+  const geom = buildGeometry(pGrid, pMax / Math.SQRT2, ncal, NQ_LOW, NQ_HIGH);
+  cache = { ncal, pMax, geom };
   return geom;
 }
 
@@ -94,10 +99,12 @@ self.onmessage = (e: MessageEvent<WKERequest>) => {
   try {
     const species = SPECIES[req.speciesKey] ?? SPECIES[DEFAULT_SPECIES_KEY];
     const scales = computeScales(req.density_um3, req.a_a0, species);
-    const geom = geometryFor(scales.ncal, post, runId);
+    const pMax = solverPMax(scales.xi_um);
+    const geom = geometryFor(scales.ncal, pMax, post, runId);
+    const pGrid = geom.grid;
 
     const k_um_inv = new Float64Array(N_GRID);
-    for (let i = 0; i < N_GRID; i++) k_um_inv[i] = P_GRID[i] / scales.xi_um;
+    for (let i = 0; i < N_GRID; i++) k_um_inv[i] = pGrid[i] / scales.xi_um;
 
     const onProgress = ({ pct, tau, kp, nSteps }: { pct: number; tau: number; kp: number; nSteps: number }) =>
       post({ type: 'progress', runId, phase: 'integrating', pct, tau, kp, nSteps });
