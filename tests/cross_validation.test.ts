@@ -25,6 +25,7 @@ import { inferNA, predictDeltaT, shapeFactor, naContour } from '../src/physics/c
 import { buildInitialF, runWKE } from '../src/physics/integrator';
 import { derivePhysics } from '../src/physics/modes';
 import { prepareFromText, prepareSpectrum } from '../src/physics/spectrum';
+import { exportTrajectory } from '../src/physics/export';
 import { PRESETS } from '../src/physics/presets';
 import { SPECIES, BOHR_RADIUS_UM, P_MIN, P_MAX, N_GRID, NQ_LOW, NQ_HIGH, REFERENCE_XI_UM, solverPMax } from '../src/physics/constants';
 import type { KernelType } from '../src/physics/collision';
@@ -291,6 +292,25 @@ section('Spectrum import conventions');
   check('conventions are not interchangeable',
     Math.abs(dA.kp0_um_inv / dN.kp0_um_inv - 1) > 0.01,
     `k_p ${dA.kp0_um_inv.toFixed(4)} vs ${dN.kp0_um_inv.toFixed(4)} μm⁻¹`);
+}
+
+section('Trajectory export');
+{
+  const exported = exportTrajectory(
+    Float64Array.from([1, 2]),
+    [
+      { t_s: 0, q: [0.25, 0.75] },
+      { t_s: 0.5, q: [0.5, 0.5] },
+    ],
+    3,
+  );
+  const lines = exported.csv.split('\n');
+  check('trajectory export has k,n_k,time header', lines[0] === 'k_um_inv,n_k,time_s', lines[0]);
+  check('trajectory export emits every k point at every time', exported.rows === 4 && exported.curves === 2,
+    `rows=${exported.rows} curves=${exported.curves}`);
+  const firstNk = Number(lines[1].split(',')[1]);
+  relClose('trajectory n_k matches plotted occupation conversion', firstNk,
+    0.25 * 2 * Math.PI ** 2 * 3, 1e-9);
 }
 
 // -------------------------------------------------------- peak detection ---

@@ -21,7 +21,7 @@ import { derivePhysics, classicalRunParameters } from './physics/modes';
 import { predictDeltaT } from './physics/calibration';
 import { getPreset, DEFAULT_PRESET_KEY } from './physics/presets';
 import {
-  DEFAULT_SPECIES_KEY, REFERENCE_DENSITY_UM3, REFERENCE_A_A0,
+  DEFAULT_SPECIES_KEY, REFERENCE_DENSITY_UM3, REFERENCE_A_A0, SPECIES,
 } from './physics/constants';
 import type { PreparedSpectrum } from './physics/spectrum';
 import type { ParameterMode, RunProvenance } from './types/wke';
@@ -48,6 +48,44 @@ const DEFAULT_FIELDS: Record<ParameterMode, ParameterFields> = {
   measured_dt: { ...EMPTY_FIELDS, N: '1e5', dt_measured_s: '0.313', a_a0: String(REFERENCE_A_A0) },
 };
 
+const PARAMETERS_STORAGE_KEY = 'wke-system-parameters-v1';
+
+interface SavedParameters {
+  mode: ParameterMode;
+  speciesKey: string;
+  fieldsByMode: Record<ParameterMode, ParameterFields>;
+}
+
+function loadSavedParameters(): SavedParameters {
+  const fallback: SavedParameters = {
+    mode: 'measured_dt', speciesKey: DEFAULT_SPECIES_KEY, fieldsByMode: DEFAULT_FIELDS,
+  };
+  try {
+    const raw = localStorage.getItem(PARAMETERS_STORAGE_KEY);
+    if (!raw) return fallback;
+    const saved = JSON.parse(raw) as Partial<SavedParameters>;
+    const mode = saved.mode && Object.hasOwn(DEFAULT_FIELDS, saved.mode) ? saved.mode : fallback.mode;
+    const speciesKey = saved.speciesKey && Object.hasOwn(SPECIES, saved.speciesKey)
+      ? saved.speciesKey
+      : fallback.speciesKey;
+    const fieldsByMode = Object.fromEntries(
+      (Object.keys(DEFAULT_FIELDS) as ParameterMode[]).map((key) => {
+        const candidate = saved.fieldsByMode?.[key];
+        const fields = Object.fromEntries(
+          (Object.keys(EMPTY_FIELDS) as Array<keyof ParameterFields>).map((field) => [
+            field,
+            typeof candidate?.[field] === 'string' ? candidate[field] : DEFAULT_FIELDS[key][field],
+          ]),
+        ) as unknown as ParameterFields;
+        return [key, fields];
+      }),
+    ) as Record<ParameterMode, ParameterFields>;
+    return { mode, speciesKey, fieldsByMode };
+  } catch {
+    return fallback;
+  }
+}
+
 function useDarkMode() {
   const [dark, setDark] = useState<boolean>(() => {
     const stored = localStorage.getItem('theme');
@@ -69,12 +107,18 @@ export default function App() {
     () => getPreset(DEFAULT_PRESET_KEY).load(),
   );
 
-  const [mode, setMode] = useState<ParameterMode>('measured_dt');
-  const [speciesKey, setSpeciesKey] = useState(DEFAULT_SPECIES_KEY);
-  const [fieldsByMode, setFieldsByMode] = useState(DEFAULT_FIELDS);
+  const [savedParameters] = useState(loadSavedParameters);
+  const [mode, setMode] = useState<ParameterMode>(savedParameters.mode);
+  const [speciesKey, setSpeciesKey] = useState(savedParameters.speciesKey);
+  const [fieldsByMode, setFieldsByMode] = useState(savedParameters.fieldsByMode);
   const fields = fieldsByMode[mode];
 
+  useEffect(() => {
+    localStorage.setItem(PARAMETERS_STORAGE_KEY, JSON.stringify({ mode, speciesKey, fieldsByMode }));
+  }, [mode, speciesKey, fieldsByMode]);
+
   const [tab, setTab] = useState<Tab>('simulate');
+  const [parametersExpanded, setParametersExpanded] = useState(false);
   const [initialDraftDirty, setInitialDraftDirty] = useState(false);
   const [runMode, setRunMode] = useState<RunMode>('classical');
   const [playKernel, setPlayKernel] = useState<KernelType>('classical');
@@ -208,10 +252,9 @@ export default function App() {
 
   // Run configuration
   const runParams = classicalRunParameters(derived, REFERENCE_DENSITY_UM3);
-  const wantQuantum = runMode !== 'classical';
-  const kernels = runMode === 'both'
-    ? (['classical', 'quantum'] as const)
-    : ([runMode] as const);
+  const kernels: KernelType[] = derived.quantumAvailable
+    ? ['classical', 'quantum']
+    : ['classical'];
 
   const baseBlockedReason = derived.notes[0] ?? (initialDraftDirty
     ? 'Apply or cancel the spectrum draft before running.'
@@ -220,9 +263,7 @@ export default function App() {
     : derived.na_um2 == null
       ? 'Complete the parameters above to identify na.'
       : null);
-  const blockedReason = baseBlockedReason ?? (wantQuantum && !derived.quantumAvailable
-    ? 'The quantum kernel needs n and a separately.'
-    : null);
+  const blockedReason = baseBlockedReason;
   const playBlockedReason = baseBlockedReason ?? (playKernel === 'quantum' && !derived.quantumAvailable
     ? 'The quantum kernel needs n and a separately.'
     : null);
@@ -230,7 +271,7 @@ export default function App() {
   const startRun = () => {
     if (!spectrum || !runParams || blockedReason) return;
     // The quantum kernel needs the true (n, a); the classical one only na.
-    const useTrue = wantQuantum && derived.density_um3 != null && derived.a_a0 != null;
+    const useTrue = derived.quantumAvailable && derived.density_um3 != null && derived.a_a0 != null;
     setLastSolverFingerprint(runFingerprint);
     setSolverProvenance({
       origin: 'solver', spectrumLabel: spectrum.raw.label, mode, speciesKey,
@@ -238,7 +279,7 @@ export default function App() {
       N: derived.N, V_um3: derived.V_um3, tauMax: 400, rtol: 1e-7, nSnapshots: 150,
     });
     solver.run({
-      kernels: [...kernels],
+      kernels,
       q: Array.from(spectrum.q),
       density_um3: useTrue ? derived.density_um3! : runParams.density_um3,
       a_a0: useTrue ? derived.a_a0! : runParams.a_a0,
@@ -362,13 +403,31 @@ kappa   = 3.932378e-6 s*um^-2`}
 
       <main className="max-w-[1440px] mx-auto px-3 sm:px-5 py-4 space-y-4">
         {(tab === 'play' || tab === 'simulate') && (
-          <RunParametersStrip
-            mode={mode}
-            speciesKey={speciesKey}
-            derived={derived}
-            stale={tab === 'play' ? previewIsStale : solverIsStale}
-            onEdit={() => setTab('calibrate')}
-          />
+          <>
+            <RunParametersStrip
+              mode={mode}
+              speciesKey={speciesKey}
+              derived={derived}
+              stale={tab === 'play' ? previewIsStale : solverIsStale}
+              expanded={parametersExpanded}
+              onToggle={() => setParametersExpanded((expanded) => !expanded)}
+            />
+            {parametersExpanded && (
+              <div id="inline-system-parameters" className="card-stage-enter">
+                <ParametersCard
+                  mode={mode}
+                  onMode={setMode}
+                  speciesKey={speciesKey}
+                  onSpecies={changeSpecies}
+                  fields={fields}
+                  onFields={(next) => setFieldsByMode((current) => ({ ...current, [mode]: next }))}
+                  derived={derived}
+                  desc={desc}
+                  spectrum={spectrum}
+                />
+              </div>
+            )}
+          </>
         )}
         {tab === 'play' && (
           <PlaygroundCard
@@ -449,7 +508,7 @@ kappa   = 3.932378e-6 s*um^-2`}
                 speciesKey={speciesKey}
                 onSpecies={changeSpecies}
                 fields={fields}
-                onFields={(f) => setFieldsByMode({ ...fieldsByMode, [mode]: f })}
+                onFields={(next) => setFieldsByMode((current) => ({ ...current, [mode]: next }))}
                 derived={derived}
                 desc={desc}
                 spectrum={spectrum}

@@ -35,7 +35,7 @@ export function InitialStateCard({
   onDraftChange?: (dirty: boolean) => void;
 }) {
   const [source, setSource] = useState<Source>('preset');
-  const [convention, setConvention] = useState<SpectrumConvention>('Nk_over_N');
+  const [convention, setConvention] = useState<SpectrumConvention>('n_k');
   const [text, setText] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -242,15 +242,17 @@ export function InitialStateCard({
               label="Spectrum convention"
               hint={CONVENTIONS.find((item) => item.id === convention)?.detail}
             >
-              <select
-                className="select"
+              <SegmentedControl
+                className="w-full"
+                size="xs"
                 value={convention}
-                onChange={(e) => setConvention(e.target.value as SpectrumConvention)}
-              >
-                {CONVENTIONS.map((c) => (
-                  <option key={c.id} value={c.id}>{c.columns}: {c.label}</option>
-                ))}
-              </select>
+                onChange={setConvention}
+                options={CONVENTIONS.map((c) => ({
+                  id: c.id,
+                  label: c.id === 'n_k' ? 'nₖ · radial density' : 'Nₖ / N · shell density',
+                  title: `${c.columns}: ${c.label}`,
+                }))}
+              />
             </Field>
 
             <div
@@ -302,7 +304,8 @@ export function InitialStateCard({
               <button
                 className="btn-secondary text-xs"
                 onClick={() => {
-                  setConvention('Nk_over_N');
+                  const preset = PRESETS.find((item) => item.key === (presetKey ?? PRESETS[0].key));
+                  setConvention(preset?.load().raw.convention ?? 'n_k');
                   setText(presetToCsv(presetKey ?? PRESETS[0].key));
                 }}
                 title="Fill the box with an example in the expected format"

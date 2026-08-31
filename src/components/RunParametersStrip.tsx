@@ -9,13 +9,14 @@ import { MathBlock } from './MathBlock';
 import type { DerivedPhysics, ParameterMode } from '../types/wke';
 
 export function RunParametersStrip({
-  mode, speciesKey, derived, stale, onEdit,
+  mode, speciesKey, derived, stale, expanded, onToggle,
 }: {
   mode: ParameterMode;
   speciesKey: string;
   derived: DerivedPhysics;
   stale: boolean;
-  onEdit: () => void;
+  expanded: boolean;
+  onToggle: () => void;
 }) {
   const species = SPECIES[speciesKey];
   const speciesMatch = species?.symbol.match(/^(\d+)(.+)$/);
@@ -39,8 +40,13 @@ export function RunParametersStrip({
       {item('na =', derived.na_um2 != null ? `${expo(derived.na_um2)} μm⁻²` : '—')}
       {item('N =', derived.N != null ? sig(derived.N) : '—')}
       {item('V =', derived.V_um3 != null ? `${sig(derived.V_um3)} μm³` : '—')}
-      <button className="btn-secondary text-2xs py-1 ml-auto" onClick={onEdit}>
-        Edit parameters
+      <button
+        className="btn-secondary text-2xs py-1 ml-auto"
+        onClick={onToggle}
+        aria-expanded={expanded}
+        aria-controls="inline-system-parameters"
+      >
+        {expanded ? 'Hide parameters' : 'Edit parameters'}
       </button>
     </div>
   );

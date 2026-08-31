@@ -58,7 +58,7 @@ function effectiveExponent(k: ArrayLike<number>, n: ArrayLike<number>): number[]
   return result;
 }
 
-export type RunMode = 'classical' | 'quantum' | 'both';
+export type RunMode = KernelType;
 
 export interface RunState {
   running: boolean;
@@ -90,6 +90,9 @@ export function SimulationPanel({
   const primary = runMode === 'quantum'
     ? runs.quantum ?? runs.classical
     : runs.classical ?? runs.quantum;
+  useEffect(() => {
+    if (!quantumAvailable && runMode === 'quantum') onRunMode('classical');
+  }, [quantumAvailable, runMode, onRunMode]);
   const snapshots = primary?.snapshots ?? [];
   const totalTime = snapshots.length > 0 ? snapshots[snapshots.length - 1].t_s : 0;
 
@@ -336,9 +339,9 @@ export function SimulationPanel({
         runs.quantum?.kpTrack.t_s.at(-1) ?? 0,
       ) * 1.08
     : 1;
-  const selectedRunExists = runMode === 'both'
+  const completeRunExists = quantumAvailable
     ? Boolean(runs.classical && runs.quantum)
-    : Boolean(runs[runMode]);
+    : Boolean(runs.classical);
 
   return (
     <Card
@@ -346,6 +349,7 @@ export function SimulationPanel({
       subtitle="Direct wave kinetic equation solve."
       actions={
         <div className="flex items-center gap-2">
+          <span className="text-2xs text-slate-500 dark:text-slate-400">Display</span>
           <SegmentedControl
             size="xs"
             value={runMode}
@@ -353,16 +357,14 @@ export function SimulationPanel({
             options={[
               { id: 'classical', label: 'Classical' },
               { id: 'quantum', label: 'Quantum', disabled: !quantumAvailable, title: quantumAvailable ? undefined : quantumBlockedReason },
-              { id: 'both', label: 'Both', disabled: !quantumAvailable, title: quantumAvailable ? undefined : quantumBlockedReason },
             ]}
           />
           {runState.running ? (
             <button className="btn-secondary text-xs" onClick={onCancel}>Stop run</button>
-          ) : (!selectedRunExists || runIsStale) && (
+          ) : (!completeRunExists || runIsStale) && (
             <button className="btn-primary text-xs" onClick={onRun} disabled={!canRun} title={blockedReason ?? undefined}>
-              {runIsStale
-                ? `Re-run ${runMode === 'both' ? 'both' : runMode}`
-                : runMode === 'both' ? 'Run both' : `Run ${runMode}`}
+              {runIsStale ? (quantumAvailable ? 'Re-run both' : 'Re-run classical')
+                : quantumAvailable ? 'Run both' : 'Run classical'}
             </button>
           )}
         </div>
@@ -410,9 +412,6 @@ export function SimulationPanel({
 
         {primary && snap && initial && (
           <>
-            <div className="flex justify-end">
-              <Badge tone="info">Displaying {primary.kernel} trajectory</Badge>
-            </div>
             <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(168px, 1fr))' }}>
               {(['classical', 'quantum'] as KernelType[]).map((k) => {
                 const r = runs[k];
