@@ -73,6 +73,7 @@ export function useShootingRefine() {
         tauMax: 400,
         rtol: 1e-6,
         nSnapshots: 8, // the shooting method only reads dtHalf_s, not the timeline
+        stopKpFraction: 0.5,
       };
       worker.postMessage(req);
     });

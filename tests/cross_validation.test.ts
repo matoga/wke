@@ -180,6 +180,34 @@ for (const rec of presets.profiles) {
   relClose(`preset ${rec.key}: k_p,0`, d.kp0_um_inv, rec.descriptors.kp0_um_inv, 1e-9);
   relClose(`preset ${rec.key}: C_shape`, d.c_shape, rec.descriptors.c_shape, 1e-9);
 }
+check('canonical analytic preset carries a formula',
+  Boolean(PRESETS.find((preset) => preset.key === 'canonical_gaussian')?.formula),
+  'expected a typeset definition');
+check('curated measured presets suppress import notes',
+  ['martin_kick_state', 'nature_2025_p1', 'nature_2025_p2', 'nature_2025_p3'].every(
+    (key) => PRESETS.find((preset) => preset.key === key)?.hideImportNotes === true,
+  ), 'Martin and Nature P1–P3');
+
+for (const [key, name, points, cutoff] of [
+  ['martin_kick_state', 'Martin kick state', 174, 4],
+  ['nature_2025_p1', 'Nature 2025: P1', 37, 4],
+  ['nature_2025_p2', 'Nature 2025: P2', 39, 4],
+  ['nature_2025_p3', 'Nature 2025: P3', 49, 6],
+] as const) {
+  const preset = PRESETS.find((item) => item.key === key);
+  check(`${name} preset is available`, preset != null, key);
+  if (preset) {
+    const prepared = preset.load();
+    check(`${name} retains measured points`, prepared.raw.k_um_inv.length === points,
+      `points=${prepared.raw.k_um_inv.length}`);
+    check(`${name} obeys its k cutoff`, Math.max(...prepared.raw.k_um_inv) <= cutoff,
+      `k_max=${Math.max(...prepared.raw.k_um_inv)}`);
+    check(`${name} uses n_k convention`, prepared.raw.convention === 'n_k', prepared.raw.convention);
+    check(`${name} produces a nonnegative normalized spectrum`,
+      prepared.q.every((value) => value >= 0) && Math.abs(trapz(prepared.q, prepared.k) - 1) < 1e-10,
+      `min q=${Math.min(...prepared.q)}`);
+  }
+}
 
 // --------------------------------------------------------- calibration ---
 
@@ -443,6 +471,26 @@ for (const p of profiles) {
     check(`${p.key}: ${kernel} k_p(t) checkpoints (${checked})`,
       checked >= 20 && worst < 2e-3, `max rel=${worst.toExponential(2)}`);
   }
+}
+
+section('Configurable stop target');
+{
+  const p = profiles[0];
+  const qSolver = normalizeQ(interpolateQ(p.raw_k, p.raw_q, kSolver), kSolver);
+  const f0 = buildInitialF(qSolver, kSolver, META.density_um3);
+  const kp0 = peakMomentumFromF(kSolver, f0);
+  const target = 0.8;
+  const res = runWKE({
+    kernel: 'classical', geom, t0_s: META.t0_s, xi_um: META.xi_um,
+    kp0_um_inv: kp0, f0, tauMax: 400, rtol: 1e-7, atol: 1e-10,
+    stopKpFraction: target,
+  });
+  check('custom target is reached', res.reachedHalf, `tau=${res.tauHalf}`);
+  relClose('custom target stops at requested k_p ratio',
+    res.snapshots.at(-1)!.kp_um_inv / kp0, target, 2e-4);
+  check('custom target is earlier than half-time',
+    res.dtHalf_s! < p.dt_half_classical_s,
+    `${res.dtHalf_s} s vs ${p.dt_half_classical_s} s`);
 }
 
 // Classical dynamics depend on n and a only through na: two (n, a) pairs with

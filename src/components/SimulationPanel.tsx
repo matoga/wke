@@ -15,18 +15,32 @@ import { spectralExtent } from '../physics/descriptors';
 import { applyNorm } from '../ui/norm';
 import type { NormSpec } from '../ui/norm';
 
-function stageName(stage: string, reachedHalf: boolean): string {
+const isHalfTarget = (value: number) => Math.abs(value - 0.5) < 1e-12;
+const targetTimeMath = (value: number) => isHalfTarget(value)
+  ? '\\Delta t_{1/2}'
+  : `\\Delta t_{${value.toFixed(3)}}`;
+const targetMarkerLabel = (value: number) => isHalfTarget(value)
+  ? 'k_p,0/2'
+  : `target ${value.toFixed(3)} k_p,0`;
+
+function stageName(stage: string, reachedTarget: boolean, stopKpFraction: number): string {
   if (stage === 'initial') return 'initial peak';
   if (stage === 'continued') return 'resumed here';
-  if (stage === 'final') return reachedHalf ? 'half-time reached' : 'run limit reached';
+  if (stage === 'final') return reachedTarget
+    ? `target ${stopKpFraction.toFixed(3)} reached`
+    : 'run limit reached';
   if (stage === 'extended') return 'extension ends';
   return `peak ratio ${stage}`;
 }
 
-function StageLabel({ stage, reachedHalf }: { stage: string; reachedHalf: boolean }) {
+function StageLabel({ stage, reachedTarget, stopKpFraction }: {
+  stage: string; reachedTarget: boolean; stopKpFraction: number;
+}) {
   if (stage === 'initial') return <MathBlock math="k_{p,0}" />;
   if (stage === 'continued') return <>resumed here</>;
-  if (stage === 'final') return reachedHalf ? <MathBlock math="\Delta t_{1/2}" /> : <>run limit reached</>;
+  if (stage === 'final') return reachedTarget
+    ? <MathBlock math={targetTimeMath(stopKpFraction)} />
+    : <>run limit reached</>;
   if (stage === 'extended') return <>extension ends</>;
   return <><MathBlock math="k_p/k_{p,0}" /> = {stage}</>;
 }
@@ -72,6 +86,7 @@ export function SimulationPanel({
   runs, runState, runMode, onRunMode, onRun, onCancel, onContinue, norm,
   quantumAvailable, quantumBlockedReason, canRun, blockedReason,
   runIsStale,
+  stopKpFraction, onStopKpFraction,
 }: {
   runs: Partial<Record<KernelType, WKEResult>>;
   norm: NormSpec;
@@ -86,6 +101,8 @@ export function SimulationPanel({
   canRun: boolean;
   blockedReason: string | null;
   runIsStale: boolean;
+  stopKpFraction: number;
+  onStopKpFraction: (value: number) => void;
 }) {
   const primary = runMode === 'quantum'
     ? runs.quantum ?? runs.classical
@@ -111,6 +128,13 @@ export function SimulationPanel({
   // rainbow remain available as explicit alternatives.
   const [viewMode, setViewMode] = useState<'animate' | 'animate-clean' | 'rainbow'>('animate');
   const [gammaGuide, setGammaGuide] = useState(-7 / 3);
+  const [stopDraft, setStopDraft] = useState(String(stopKpFraction));
+  useEffect(() => setStopDraft(String(stopKpFraction)), [stopKpFraction]);
+  const commitStopDraft = () => {
+    const value = Number(stopDraft);
+    if (value > 0 && value < 1) onStopKpFraction(value);
+    else setStopDraft(String(stopKpFraction));
+  };
 
   const displayTime = simTime == null ? totalTime : Math.min(simTime, totalTime);
 
@@ -330,11 +354,10 @@ export function SimulationPanel({
   }, [primary, snap, animated, backgroundSeries, rainbowFrames, toOccupation, totalTime]);
 
   const kpMax = primary ? primary.kp0_um_inv * 1.05 : 1;
-  // The x-range must track the longest available track, not just the
-  // half-time — a Continue extension runs well past dtHalf_s.
+  // The x-range must track the longest available track, not just the stop time.
   const tMax = primary
     ? Math.max(
-        primary.dtHalf_s ?? 0,
+        primary.dtTarget_s ?? primary.dtHalf_s ?? 0,
         runs.classical?.kpTrack.t_s.at(-1) ?? 0,
         runs.quantum?.kpTrack.t_s.at(-1) ?? 0,
       ) * 1.08
@@ -371,6 +394,40 @@ export function SimulationPanel({
       }
     >
       <div className="space-y-3">
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/40 px-3 py-2">
+          <div className="min-w-0 flex-1">
+            <div className="text-2xs font-medium text-slate-700 dark:text-slate-200">
+              Stop at <MathBlock math="k_p(t) / k_{p,0}" />
+            </div>
+            <div className="text-3xs text-slate-500 dark:text-slate-400">
+              {isHalfTarget(stopKpFraction)
+                ? '1/2 uses the calibrated formula and the numerical solver.'
+                : 'Custom targets are evaluated numerically; no calibration formula is applied.'}
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              className="input w-24 py-1 font-mono tabular-nums text-xs"
+              aria-label="Stop k_p fraction"
+              value={stopDraft}
+              min={0.001}
+              max={0.999}
+              step={0.05}
+              disabled={runState.running}
+              onChange={(event) => setStopDraft(event.target.value)}
+              onBlur={commitStopDraft}
+              onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); }}
+            />
+            <button
+              className="btn-secondary text-2xs py-1"
+              disabled={runState.running || isHalfTarget(stopKpFraction)}
+              onClick={() => onStopKpFraction(0.5)}
+            >
+              Use 1/2
+            </button>
+          </div>
+        </div>
         {blockedReason && !runState.running && (
           <Callout tone="info">{blockedReason}</Callout>
         )}
@@ -406,7 +463,7 @@ export function SimulationPanel({
 
         {primary && primary.gridCoverage < 0.99 && (
           <Callout tone="warning" title="Spectrum exceeds solver grid">
-            {(primary.gridCoverage * 100).toFixed(1)}% covered. This half-time is unreliable.
+            {(primary.gridCoverage * 100).toFixed(1)}% covered. This stop time is unreliable.
           </Callout>
         )}
 
@@ -422,11 +479,11 @@ export function SimulationPanel({
                       <span className="inline-block w-2 h-2 rounded-full"
                         style={{ background: k === 'classical' ? COLORS.classical : COLORS.quantum }} />
                       <span className="text-2xs uppercase tracking-[0.08em] text-slate-500 dark:text-slate-400">
-                        {k} <MathBlock math="\Delta t_{1/2}" />
+                        {k} <MathBlock math={targetTimeMath(r.stopKpFraction)} />
                       </span>
                     </div>
                     <div className="font-mono tabular-nums text-base font-semibold mt-0.5">
-                      {r.reachedHalf ? seconds(r.dtHalf_s) : 'no crossing'}
+                      {r.reachedTarget ? seconds(r.dtTarget_s) : 'no crossing'}
                     </div>
                     <div className="text-2xs text-slate-500 dark:text-slate-400">
                       {r.nSteps} steps · {(r.wallTime_ms / 1000).toFixed(2)} s
@@ -515,7 +572,7 @@ export function SimulationPanel({
                         const position = totalTime > 0 ? Math.max(0, Math.min(100, group.time / totalTime * 100)) : 0;
                         const active = group.marks.some((mark) => idx === mark.i);
                         const accessibleNames = group.marks
-                          .map((mark) => stageName(mark.stage, primary.reachedHalf))
+                          .map((mark) => stageName(mark.stage, primary.reachedTarget, primary.stopKpFraction))
                           .join(', ');
                         return (
                           <button
@@ -531,7 +588,11 @@ export function SimulationPanel({
                             <span className="timeline-event-popover" role="tooltip">
                               {group.marks.map((mark) => (
                                 <span key={`${mark.i}-${mark.stage}`} className="block whitespace-nowrap">
-                                  <StageLabel stage={mark.stage} reachedHalf={primary.reachedHalf} />
+                                  <StageLabel
+                                    stage={mark.stage}
+                                    reachedTarget={primary.reachedTarget}
+                                    stopKpFraction={primary.stopKpFraction}
+                                  />
                                 </span>
                               ))}
                               <span className="mt-0.5 block whitespace-nowrap font-mono text-[9px] font-normal text-slate-400 dark:text-slate-500">
@@ -585,7 +646,7 @@ export function SimulationPanel({
                   markers={[
                     { id: 'kp0', axis: 'x', value: primary.kp0_um_inv, label: 'k_p,0', color: COLORS.muted },
                     { id: 'kp', axis: 'x', value: snap.kp_um_inv, label: 'k_p(t)', color: COLORS.peak },
-                    { id: 'half', axis: 'x', value: primary.kp0_um_inv / 2, label: 'k_p,0/2', color: COLORS.stage },
+                    { id: 'target', axis: 'x', value: primary.kp0_um_inv * primary.stopKpFraction, label: targetMarkerLabel(primary.stopKpFraction), color: COLORS.stage },
                   ]}
                 />
               </div>
@@ -639,9 +700,9 @@ export function SimulationPanel({
                     },
                   ].filter(Boolean) as never}
                   markers={[
-                    { id: 'half', axis: 'y', value: primary.kp0_um_inv / 2, label: 'k_p,0/2', color: COLORS.stage },
-                    ...(primary.dtHalf_s != null
-                      ? [{ id: 'dt', axis: 'x' as const, value: primary.dtHalf_s, label: 'Δt₁ᐟ₂', color: COLORS.peak }]
+                    { id: 'target', axis: 'y', value: primary.kp0_um_inv * primary.stopKpFraction, label: targetMarkerLabel(primary.stopKpFraction), color: COLORS.stage },
+                    ...(primary.dtTarget_s != null
+                      ? [{ id: 'dt', axis: 'x' as const, value: primary.dtTarget_s, label: isHalfTarget(primary.stopKpFraction) ? 'Δt₁ᐟ₂' : `Δt(${primary.stopKpFraction.toFixed(3)})`, color: COLORS.peak }]
                       : []),
                     { id: 'cursor', axis: 'x', value: snap.t_s, label: '', color: COLORS.muted, dashed: false },
                   ]}
@@ -707,7 +768,7 @@ export function SimulationPanel({
         {!primary && !runState.running && (
           <p className="text-2xs text-slate-500 dark:text-slate-400">
             Press Run to integrate the isotropic four-wave kinetic equation until
-            k_p(t) falls to k_p,0/2. A typical solve takes about a second.
+            k_p(t)/k_p,0 reaches {stopKpFraction.toFixed(3)}. A typical solve takes about a second.
           </p>
         )}
       </div>

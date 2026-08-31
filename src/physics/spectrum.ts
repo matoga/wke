@@ -142,9 +142,12 @@ export function prepareSpectrum(raw: RawSpectrum): PreparedSpectrum {
 
   const warnings = [...raw.warnings];
   let negatives = 0;
+  const nonnegativeValues = vSorted.map((value) => {
+    if (value < 0) { negatives++; return 0; }
+    return value;
+  });
   const shellRaw = kSorted.map((kv, i) => {
-    let v = vSorted[i];
-    if (v < 0) { negatives++; v = 0; }
+    const v = nonnegativeValues[i];
     return raw.convention === 'n_k' ? 4 * Math.PI * kv * kv * v : v;
   });
   if (negatives > 0) {
@@ -162,7 +165,7 @@ export function prepareSpectrum(raw: RawSpectrum): PreparedSpectrum {
   // Below the first measurement, retain the first finite n(k), not the first
   // shell value. For an n(k) import this happens naturally before conversion;
   // for an N_k/N import we reconstruct the equivalent k² shell scaling.
-  const importedOnGrid = interpolateQ(kSorted, vSorted, kGrid, { lower: 'constant' });
+  const importedOnGrid = interpolateQ(kSorted, nonnegativeValues, kGrid, { lower: 'constant' });
   if (kSorted[0] > kGrid[0]) {
     warnings.push(
       `Below ${kSorted[0].toPrecision(3)} μm⁻¹, n_k is held at its first finite supplied value.`,

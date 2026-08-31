@@ -41,7 +41,7 @@ function Panel({
 }
 
 export function ResultsCard({
-  mode, desc, derived, dtMeasured_s, runs, runIsStale, usingRefinedNa,
+  mode, desc, derived, dtMeasured_s, runs, runIsStale, usingRefinedNa, stopKpFraction,
 }: {
   mode: ParameterMode;
   desc: SpectralDescriptors | null;
@@ -50,6 +50,7 @@ export function ResultsCard({
   runs: Partial<Record<'classical' | 'quantum', WKEResult>>;
   runIsStale: boolean;
   usingRefinedNa: boolean;
+  stopKpFraction: number;
 }) {
   if (!desc) {
     return (
@@ -60,14 +61,18 @@ export function ResultsCard({
   }
 
   const na = derived.na_um2;
-  const dtFormula = na != null && na > 0 ? predictDeltaT(desc, na) : null;
-  const dtWKE = runs.classical?.dtHalf_s ?? null;
-  const dtQuantum = runs.quantum?.dtHalf_s ?? null;
+  const formulaEnabled = Math.abs(stopKpFraction - 0.5) < 1e-12;
+  const dtFormula = formulaEnabled && na != null && na > 0 ? predictDeltaT(desc, na) : null;
+  const dtWKE = runs.classical?.dtTarget_s ?? runs.classical?.dtHalf_s ?? null;
+  const dtQuantum = runs.quantum?.dtTarget_s ?? runs.quantum?.dtHalf_s ?? null;
+  const classicalFactor = runs.classical?.stopKpFraction ?? 0.5;
+  const quantumFactor = runs.quantum?.stopKpFraction ?? 0.5;
+  const classicalIsHalf = Math.abs(classicalFactor - 0.5) < 1e-12;
 
   const frac = (a: number | null, b: number | null) =>
     a != null && b != null && b !== 0 ? (a - b) / b : null;
 
-  const diffFormulaWKE = frac(dtFormula, dtWKE);
+  const diffFormulaWKE = classicalIsHalf ? frac(dtFormula, dtWKE) : null;
   const inverse = mode === 'measured_dt';
   const formulaNa = inverse && dtMeasured_s != null && dtMeasured_s > 0
     ? inferNA(desc, dtMeasured_s)
@@ -87,6 +92,11 @@ export function ResultsCard({
               {desc.domainWarnings.map((warning, index) => <li key={index}>{warning}</li>)}
             </ul>
             <p className="mt-1">The direct WKE simulation is unaffected by this formula limitation.</p>
+          </Callout>
+        )}
+        {!formulaEnabled && (
+          <Callout tone="info" title={`Numerical target: k_p/k_p,0 = ${stopKpFraction.toFixed(3)}`}>
+            The calibrated expression applies only to the 1/2 target. Times for this target come only from direct WKE runs.
           </Callout>
         )}
         {inverse ? (
@@ -125,13 +135,13 @@ export function ResultsCard({
               </div>
               <div>
                 <Metric
-                  label="classical WKE Δt₁ᐟ₂ at active na"
+                  label={classicalIsHalf ? 'classical WKE Δt₁ᐟ₂ at active na' : `classical WKE Δt(${classicalFactor.toFixed(3)}) at active na`}
                   value={dtWKE != null ? seconds(dtWKE) : 'not run'}
                 />
-                <Metric
+                {formulaEnabled && classicalIsHalf && <Metric
                   label="WKE vs measured"
                   value={frac(dtWKE, dtMeasured_s) != null ? pct(frac(dtWKE, dtMeasured_s)!) : '-'}
-                />
+                />}
                 <Metric label="A_pred = κ k_p,0² C_shape" value={expo(desc.A_pred_s_um4)} unit="s·μm⁻⁴" />
               </div>
             </div>
@@ -139,27 +149,27 @@ export function ResultsCard({
         ) : (
           <>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-              <Panel
-                label="calibration formula"
-                color={COLORS.formula}
-                value={dtFormula != null ? seconds(dtFormula) : '-'}
-                sub={<>Δt = κ k<sub>p</sub>² C<sub>shape</sub> / (na)²</>}
-                status={desc.domainStatus === 'inside'
-                  ? <Badge tone="success">certified</Badge>
-                  : <Badge tone="warning">extrapolated</Badge>}
-              />
+              {formulaEnabled && <Panel
+                  label="calibration formula"
+                  color={COLORS.formula}
+                  value={dtFormula != null ? seconds(dtFormula) : '-'}
+                  sub={<>Δt = κ k<sub>p</sub>² C<sub>shape</sub> / (na)²</>}
+                  status={desc.domainStatus === 'inside'
+                    ? <Badge tone="success">certified</Badge>
+                    : <Badge tone="warning">extrapolated</Badge>}
+                />}
               <Panel
                 label="classical WKE"
                 color={COLORS.classical}
                 value={dtWKE != null ? seconds(dtWKE) : 'not run'}
-                sub="direct in-browser solve"
+                sub={`direct solve to k_p/k_p,0 = ${classicalFactor.toFixed(3)}`}
                 tone={dtWKE == null ? 'muted' : undefined}
               />
               <Panel
                 label="quantum WKE"
                 color={COLORS.quantum}
                 value={dtQuantum != null ? seconds(dtQuantum) : derived.quantumAvailable ? 'not run' : 'needs n and a'}
-                sub="Bose kernel with +1 factors"
+                sub={`Bose kernel to k_p/k_p,0 = ${quantumFactor.toFixed(3)}`}
                 tone={dtQuantum == null ? 'muted' : undefined}
               />
             </div>

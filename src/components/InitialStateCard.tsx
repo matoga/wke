@@ -155,6 +155,7 @@ export function InitialStateCard({
   };
 
   const raw = spectrum?.raw;
+  const selectedPreset = presetKey == null ? null : PRESETS.find((preset) => preset.key === presetKey) ?? null;
   let half = 0;
   if (spectrum) {
     let qMax = 0;
@@ -368,7 +369,17 @@ export function InitialStateCard({
 
         {raw && spectrum && (
           <>
-            {spectrum.raw.warnings.length > 0 && (
+            {selectedPreset?.formula && (
+              <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/40 px-3 py-2.5">
+                <div className="text-3xs uppercase tracking-wider font-semibold text-slate-500 dark:text-slate-400 mb-1.5">
+                  Analytic definition
+                </div>
+                <div className="overflow-x-auto text-sm text-slate-800 dark:text-slate-100">
+                  <MathBlock math={selectedPreset.formula} />
+                </div>
+              </div>
+            )}
+            {!selectedPreset?.hideImportNotes && spectrum.raw.warnings.length > 0 && (
               <Callout tone="warning" title="Import notes">
                 <ul className="list-disc pl-4 space-y-0.5">
                   {spectrum.raw.warnings.map((w, i) => <li key={i}>{w}</li>)}

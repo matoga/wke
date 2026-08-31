@@ -14,6 +14,7 @@ export interface RunSpec {
   tauMax: number;
   rtol: number;
   nSnapshots: number;
+  stopKpFraction: number;
 }
 
 const IDLE: RunState = { running: false, phase: '', pct: 0 };
@@ -35,14 +36,16 @@ function mergeContinuation(prior: WKEResult, seg: WKEResult): WKEResult {
     t_s: s.t_s + offsetT,
     // The segment's own t=0 frame marks exactly where it resumed, coinciding
     // with prior's last frame — kept (not dropped) so the boundary is visible
-    // on the timeline. Its own 'final' is only the real Δt₁ᐟ₂ crossing if this
-    // segment is the one that actually crossed it; otherwise it is just where
-    // this extension's time budget ran out.
-    stage: s.stage === 'initial' ? 'continued' : s.stage === 'final' && !seg.reachedHalf ? 'extended' : s.stage,
+    // on the timeline. Its own 'final' is only the configured target crossing
+    // if this segment crossed it; otherwise it is the extension's run limit.
+    stage: s.stage === 'initial' ? 'continued' : s.stage === 'final' && !seg.reachedTarget ? 'extended' : s.stage,
   }));
 
   return {
     ...prior,
+    reachedTarget: prior.reachedTarget || seg.reachedTarget,
+    tauTarget: prior.reachedTarget ? prior.tauTarget : (seg.reachedTarget ? (seg.tauTarget ?? 0) + offsetTau : null),
+    dtTarget_s: prior.reachedTarget ? prior.dtTarget_s : (seg.reachedTarget ? (seg.dtTarget_s ?? 0) + offsetT : null),
     reachedHalf: prior.reachedHalf || seg.reachedHalf,
     tauHalf: prior.reachedHalf ? prior.tauHalf : (seg.reachedHalf ? (seg.tauHalf ?? 0) + offsetTau : null),
     dtHalf_s: prior.reachedHalf ? prior.dtHalf_s : (seg.reachedHalf ? (seg.dtHalf_s ?? 0) + offsetT : null),
@@ -189,6 +192,7 @@ function postRun(worker: Worker, kernel: KernelType, spec: RunSpec, runId: strin
     tauMax: spec.tauMax,
     rtol: spec.rtol,
     nSnapshots: spec.nSnapshots,
+    stopKpFraction: spec.stopKpFraction,
   };
   worker.postMessage(req);
 }
@@ -210,7 +214,8 @@ function postContinue(
     // the message type for compatibility with existing callers but is ignored.
     extraSeconds: 0,
     kp0_um_inv: prior.kp0_um_inv,
-    alreadyHalved: prior.reachedHalf,
+    stopKpFraction: prior.stopKpFraction,
+    alreadyReachedTarget: prior.reachedTarget,
     nSnapshots: spec.nSnapshots,
   };
   worker.postMessage(req);

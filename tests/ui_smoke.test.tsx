@@ -52,7 +52,7 @@ dom.window.matchMedia ??= (() => ({
 class WorkerStub {
   onmessage: ((e: MessageEvent) => void) | null = null;
   onerror: unknown = null;
-  postMessage(req: { type: string; runId: string; kernel: string; q?: number[] }) {
+  postMessage(req: { type: string; runId: string; kernel: string; q?: number[]; stopKpFraction?: number }) {
     if (req.type === 'run') {
       setTimeout(() => {
         const n = req.q!.length;
@@ -61,14 +61,19 @@ class WorkerStub {
           tau: 1 - frac, t_s: (1 - frac) * 0.3, kp_um_inv: 2 * frac,
           q: req.q, dN_over_N: 0, dE_over_E: 0, stage,
         });
+        const stopKpFraction = req.stopKpFraction ?? 0.5;
+        const reachedTarget = req.kernel !== 'quantum';
         this.onmessage?.({
           data: {
             type: 'result', runId: req.runId, kernel: req.kernel,
             k_um_inv: k, kp0_um_inv: 2,
-            reachedHalf: req.kernel !== 'quantum',
-            tauHalf: req.kernel !== 'quantum' ? 0.3 : null,
-            dtHalf_s: req.kernel !== 'quantum' ? 0.3 : null,
-            snapshots: [snapshot(1, 'initial'), snapshot(0.5, 'final')],
+            stopKpFraction, reachedTarget,
+            tauTarget: reachedTarget ? 0.3 : null,
+            dtTarget_s: reachedTarget ? 0.3 : null,
+            reachedHalf: reachedTarget && stopKpFraction === 0.5,
+            tauHalf: reachedTarget && stopKpFraction === 0.5 ? 0.3 : null,
+            dtHalf_s: reachedTarget && stopKpFraction === 0.5 ? 0.3 : null,
+            snapshots: [snapshot(1, 'initial'), snapshot(stopKpFraction, 'final')],
             kpTrack: { t_s: [0, 0.3], kp: [2, 1] },
             scales: { xi_um: 2.3, t0_s: 6.5e-3, ncal: 1367.7, na_um2: 7.5e-3, density_um3: 2.8331 },
             nSteps: 10, nRhs: 60, nRejected: 0, wallTime_ms: 5,
@@ -87,6 +92,8 @@ class WorkerStub {
           data: {
             type: 'result', runId: req.runId, kernel: req.kernel, continuation: true,
             k_um_inv: k, kp0_um_inv: 2,
+            stopKpFraction: req.stopKpFraction ?? 0.5,
+            reachedTarget: false, tauTarget: null, dtTarget_s: null,
             reachedHalf: false, tauHalf: null, dtHalf_s: null,
             snapshots: [
               { tau: 0, t_s: 0, kp_um_inv: 1, q, dN_over_N: 0, dE_over_E: 0, stage: 'initial' },
@@ -148,6 +155,14 @@ const setInput = async (el: HTMLInputElement, value: string) => {
   });
 };
 
+const setTextarea = async (el: HTMLTextAreaElement, value: string) => {
+  const setter = Object.getOwnPropertyDescriptor(dom.window.HTMLTextAreaElement.prototype, 'value')!.set!;
+  await act(async () => {
+    setter.call(el, value);
+    el.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+  });
+};
+
 const numberInputs = () => Array.from(container.querySelectorAll('input[type="number"]')) as HTMLInputElement[];
 const selects = () => Array.from(container.querySelectorAll('select')) as HTMLSelectElement[];
 const setSelect = async (el: HTMLSelectElement, value: string) => {
@@ -199,6 +214,15 @@ check('initial state panel on top',
   (cards()[0]?.textContent ?? '').includes('Initial state'),
   `first panel was: ${(cards()[0]?.textContent ?? '').slice(0, 40)}`);
 check('simulation is available without an acceptance gate', byText('Run both') != null);
+const stopFractionInput = container.querySelector('input[aria-label="Stop k_p fraction"]') as HTMLInputElement | null;
+check('stop target defaults to the calibrated half target', stopFractionInput?.value === '0.5');
+if (stopFractionInput) {
+  await setInput(stopFractionInput, '0.8');
+  await act(async () => { stopFractionInput.dispatchEvent(new dom.window.FocusEvent('focusout', { bubbles: true })); });
+}
+check('custom stop target is identified as numerical-only', text().includes('Custom targets are evaluated numerically'));
+check('stop target is persisted', localStorage.getItem('wke-stop-kp-fraction-v1') === '0.8');
+await click(byText('Use 1/2')!);
 check('initial state can still be collapsed', byText('Collapse') != null);
 await click(byText('Collapse'));
 check('collapsed initial state can be expanded', byText('Expand') != null);
@@ -303,8 +327,23 @@ const presetSelect = selects().find((sel) =>
   Array.from(sel.options).some((o) => o.value === 'canonical_gaussian'))!;
 const highKp = Array.from(presetSelect.options).find((o) => o.value === 'prepared_state_7');
 check('high-k_p preset present', highKp != null);
+for (const [value, label] of [
+  ['martin_kick_state', 'Martin kick state'],
+  ['nature_2025_p1', 'Nature 2025: P1'],
+  ['nature_2025_p2', 'Nature 2025: P2'],
+  ['nature_2025_p3', 'Nature 2025: P3'],
+]) {
+  const option = Array.from(presetSelect.options).find((item) => item.value === value);
+  check(`${label} preset present`, option?.textContent?.includes(label) === true);
+}
+await setSelect(presetSelect, 'martin_kick_state');
+check('curated measured state hides preprocessing notes', !text().includes('Import notes'));
+await setSelect(presetSelect, 'canonical_gaussian');
+check('analytic state shows its defining formula',
+  text().includes('Analytic definition') && (initialCard?.querySelectorAll('.katex').length ?? 0) > 1);
 if (highKp) {
   await setSelect(presetSelect, 'prepared_state_7');
+  check('selected built-in state is persisted', localStorage.getItem('wke-selected-preset-v1') === 'prepared_state_7');
   check('state import does not show formula extrapolation', !text().includes('above the certified upper bound'));
 }
 
@@ -392,7 +431,25 @@ check('trajectory export uses long-form k,n_k,time columns',
   exportPreview?.value.includes('k_um_inv,n_k,time_s') === true);
 check('trajectory export contains every saved curve', text().includes('curves') && text().includes('rows'));
 
+// Custom data is deliberately session-only and must not replace the last
+// built-in preset restored on the next page load.
+await click(byText('Solve')!);
+await click(byText('Your data')!);
+const customTextarea = container.querySelector('textarea:not([readonly])') as HTMLTextAreaElement | null;
+if (customTextarea) {
+  await setTextarea(customTextarea, 'k_um_inv,n_k\n0.2,10\n0.4,20\n0.6,12\n0.8,2');
+  await click(byText('Use this spectrum')!);
+}
+check('custom spectrum does not overwrite persisted preset',
+  localStorage.getItem('wke-selected-preset-v1') === 'prepared_state_7');
+
 await act(async () => { root.unmount(); });
+const restoredRoot = createRoot(container);
+await act(async () => { restoredRoot.render(React.createElement(App)); });
+const restoredPreset = selects().find((select) =>
+  Array.from(select.options).some((option) => option.value === 'prepared_state_7'));
+check('saved built-in state restores after remount', restoredPreset?.value === 'prepared_state_7');
+await act(async () => { restoredRoot.unmount(); });
 
 console.log('');
 console.log(`${passed} passed, ${failures.length} failed`);

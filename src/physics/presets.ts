@@ -7,6 +7,8 @@
  */
 
 import presetsJson from '../../shared-data/presets.json';
+import martinKickJson from '../../shared-data/martin-kick-state.json';
+import nature2025Json from '../../shared-data/nature-2025-states.json';
 import { prepareSpectrum } from './spectrum';
 import type { PreparedSpectrum } from './spectrum';
 
@@ -37,6 +39,10 @@ export interface Preset {
   kp_um_inv: number;
   defaultDensity_um3: number;
   defaultA_a0: number;
+  /** Defining expression for presets generated directly from an analytic shape. */
+  formula?: string;
+  /** Hide preprocessing details for curated built-in measured data. */
+  hideImportNotes?: boolean;
   load: () => PreparedSpectrum;
 }
 
@@ -67,6 +73,9 @@ const fixturePresets: Preset[] = RECORDS.map((rec) => ({
   kp_um_inv: rec.descriptors.kp0_um_inv,
   defaultDensity_um3: rec.reference_density_um3,
   defaultA_a0: rec.reference_a_a0,
+  formula: rec.key === 'canonical_gaussian'
+    ? 'N_k(k) \\propto \\exp\\!\\left[-\\frac{(k-2.0)^2}{2(0.28)^2}\\right]'
+    : undefined,
   load: () =>
     prepareSpectrum({
       k_um_inv: K_DESC,
@@ -79,12 +88,13 @@ const fixturePresets: Preset[] = RECORDS.map((rec) => ({
 }));
 
 function syntheticPreset({
-  key, name, description, convention, values,
+  key, name, description, convention, formula, values,
 }: {
   key: string;
   name: string;
   description: string;
   convention: 'n_k' | 'Nk_over_N';
+  formula: string;
   values: (k: number) => number;
 }): Preset {
   const sampled = K_DESC.map((k) => Math.max(0, values(k)));
@@ -102,10 +112,43 @@ function syntheticPreset({
     kp_um_inv: K_DESC[peakIndex],
     defaultDensity_um3: DEFAULT_DENSITY_UM3,
     defaultA_a0: DEFAULT_A_A0,
+    formula,
     load: () => prepareSpectrum({
       k_um_inv: K_DESC,
       values: sampled,
       convention,
+      label: name,
+      source: 'preset',
+      warnings: [],
+    }),
+  };
+}
+
+function measuredNkPreset({
+  key, name, description, data, kMax_um_inv,
+}: {
+  key: string;
+  name: string;
+  description: string;
+  data: { k_um_inv: number[]; n_k: number[] };
+  kMax_um_inv: number;
+}): Preset {
+  const retained = data.k_um_inv
+    .map((k, index) => ({ k, n: data.n_k[index] }))
+    .filter(({ k }) => k <= kMax_um_inv);
+  const peak = retained.reduce((best, { k, n }) => {
+    const shell = k * k * Math.max(0, n);
+    return shell > best.shell ? { k, shell } : best;
+  }, { k: retained[0].k, shell: -Infinity });
+  return {
+    key, name, description, kp_um_inv: peak.k,
+    defaultDensity_um3: DEFAULT_DENSITY_UM3,
+    defaultA_a0: DEFAULT_A_A0,
+    hideImportNotes: true,
+    load: () => prepareSpectrum({
+      k_um_inv: retained.map(({ k }) => k),
+      values: retained.map(({ n }) => n),
+      convention: 'n_k',
       label: name,
       source: 'preset',
       warnings: [],
@@ -118,6 +161,7 @@ const preparedState9 = syntheticPreset({
   name: 'Prepared State 9',
   description: 'High-wavevector prepared state with a gently skewed tail.',
   convention: 'Nk_over_N',
+  formula: 'N_k(k) \\propto \\exp\\!\\left[-\\frac{(k-4.8)^2}{2\\sigma(k)^2}\\right],\\quad \\sigma(k)=\\begin{cases}0.48,&k<4.8\\\\0.72,&k\\ge 4.8\\end{cases}',
   values: (k) => {
     const kp = 4.8;
     const sigma = k < kp ? 0.48 : 0.72;
@@ -125,12 +169,29 @@ const preparedState9 = syntheticPreset({
   },
 });
 
+const martinKickState = measuredNkPreset({
+  key: 'martin_kick_state',
+  name: 'Martin kick state',
+  description: 'Measured t = 0 spectrum filtered from dataset_all.csv at relax_a = -8.',
+  data: martinKickJson,
+  kMax_um_inv: 4,
+});
+
+const nature2025States: Preset[] = (['P1', 'P2', 'P3'] as const).map((id) => measuredNkPreset({
+  key: `nature_2025_${id.toLowerCase()}`,
+  name: `Nature 2025: ${id}`,
+  description: `Measured n_k spectrum from Fig. 1b (${id}, left).`,
+  data: nature2025Json[id],
+  kMax_um_inv: id === 'P3' ? 6 : 4,
+}));
+
 const exploratoryPresets: Preset[] = [
   syntheticPreset({
     key: 'sharp_gaussian',
     name: 'Sharp Gaussian',
     description: 'Narrow shell distribution centered at k = 2.0 μm⁻¹.',
     convention: 'Nk_over_N',
+    formula: 'N_k(k) \\propto \\exp\\!\\left[-\\frac{(k-2.0)^2}{2(0.12)^2}\\right]',
     values: (k) => Math.exp(-0.5 * ((k - 2) / 0.12) ** 2),
   }),
   syntheticPreset({
@@ -138,6 +199,7 @@ const exploratoryPresets: Preset[] = [
     name: 'Top-hat in n_k',
     description: 'Heaviside occupation n_k proportional to Θ(k_p - k), with k_p = 2.2 μm⁻¹.',
     convention: 'n_k',
+    formula: 'n_k(k) \\propto \\Theta(2.2-k)',
     values: (k) => k < 2.2 ? 1 : 0,
   }),
   syntheticPreset({
@@ -145,6 +207,7 @@ const exploratoryPresets: Preset[] = [
     name: 'Thermal Bose–Einstein (μ = 0)',
     description: 'Ideal μ = 0 Bose–Einstein occupation with thermal wavevector k_T = 1.5 μm⁻¹.',
     convention: 'n_k',
+    formula: 'n_k(k) \\propto \\frac{1}{\\exp[(k/1.5)^2]-1}',
     values: (k) => 1 / Math.expm1((k / 1.5) ** 2),
   }),
   syntheticPreset({
@@ -152,6 +215,7 @@ const exploratoryPresets: Preset[] = [
     name: 'Thermal + weak perturbation',
     description: 'The μ = 0 thermal state with a weak localized occupation bump near k = 0.55 μm⁻¹.',
     convention: 'n_k',
+    formula: 'n_k(k) \\propto \\frac{1+0.12\\exp[-(k-0.55)^2/(2\\cdot0.10^2)]}{\\exp[(k/1.5)^2]-1}',
     values: (k) => {
       const thermal = 1 / Math.expm1((k / 1.5) ** 2);
       const bump = 1 + 0.12 * Math.exp(-0.5 * ((k - 0.55) / 0.1) ** 2);
@@ -165,6 +229,8 @@ export const PRESETS: Preset[] = [
   ...fixturePresets.slice(0, prepared7Index + 1),
   preparedState9,
   ...fixturePresets.slice(prepared7Index + 1),
+  martinKickState,
+  ...nature2025States,
   ...exploratoryPresets,
 ];
 

@@ -55,8 +55,8 @@ export function ExportPanel({
         const label = s.stage === 'initial'
           ? `${kernel}: t = 0`
           : s.stage === 'final'
-            ? r.reachedHalf
-              ? `${kernel}: Δt₁ᐟ₂ (${seconds(s.t_s)})`
+            ? r.reachedTarget
+              ? `${kernel}: target ${r.stopKpFraction.toFixed(3)} (${seconds(s.t_s)})`
               : `${kernel}: run limit reached (${seconds(s.t_s)})`
             : s.stage === 'continued'
               ? `${kernel}: continuation started (${seconds(s.t_s)})`
@@ -68,6 +68,8 @@ export function ExportPanel({
           atomNumber: provenance?.N ?? null,
           metadata: {
             source: 'solver run', kernel, stage: s.stage, time_s: s.t_s,
+            stop_kp_fraction: r.stopKpFraction,
+            reached_stop_target: r.reachedTarget ? 'true' : 'false',
             reached_half_time: r.reachedHalf ? 'true' : 'false',
             spectrum: provenance?.spectrumLabel ?? null, mode: provenance?.mode ?? null,
             species: provenance?.speciesKey ?? null, density_um3: provenance?.density_um3 ?? r.scales.density_um3,

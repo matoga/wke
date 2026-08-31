@@ -65,8 +65,10 @@ export interface IntegrationConfig {
   t0_s: number;
   /** healing length ξ [μm] */
   xi_um: number;
-  /** initial peak wavevector [μm⁻¹]; the half-target is kp0/2 */
+  /** initial peak wavevector [μm⁻¹] */
   kp0_um_inv: number;
+  /** terminal k_p/k_p,0 ratio; defaults to the calibrated half-time target */
+  stopKpFraction?: number;
   /** initial occupation f(p) on the state grid */
   f0: Float64Array;
   tauMax: number;
@@ -155,7 +157,7 @@ export function runWKE(config: IntegrationConfig): IntegrationResult {
     kernel, geom, t0_s, xi_um, kp0_um_inv, f0, tauMax,
     rtol = 1e-7, atol = 1e-10, nSnapshots = 40, snapshotIntervalTau,
     maxSteps = 200000, tauEval, onProgress,
-    haltOnHalf = true,
+    haltOnHalf = true, stopKpFraction = 0.5,
   } = config;
 
   const kernelId = KERNEL_IDS[kernel];
@@ -194,7 +196,10 @@ export function runWKE(config: IntegrationConfig): IntegrationResult {
 
   let y = f0.slice();
   let tau = 0;
-  const halfTarget = kp0_um_inv / 2;
+  if (!(stopKpFraction > 0 && stopKpFraction < 1)) {
+    throw new Error('stopKpFraction must be between 0 and 1');
+  }
+  const halfTarget = kp0_um_inv * stopKpFraction;
 
   const kpOf = (f: Float64Array) => peakMomentumFromF(k_um_inv, f);
 
@@ -220,7 +225,11 @@ export function runWKE(config: IntegrationConfig): IntegrationResult {
   snapshots.push(makeSnapshot(0, y, 'initial'));
   kpTrack.tau.push(0); kpTrack.t_s.push(0); kpTrack.kp.push(kp0_um_inv);
 
-  const pendingStages = STAGE_FRACTIONS.map(([frac, label]) => ({
+  const stageFractions = [...STAGE_FRACTIONS];
+  if (!stageFractions.some(([frac]) => Math.abs(frac - stopKpFraction) < 1e-12)) {
+    stageFractions.push([stopKpFraction, stopKpFraction.toFixed(3)]);
+  }
+  const pendingStages = stageFractions.map(([frac, label]) => ({
     target: frac * kp0_um_inv, label, done: false,
   }));
 

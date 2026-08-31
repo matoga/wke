@@ -56,7 +56,9 @@ function toResultMessage(
   result: IntegrationResult, k_um_inv: Float64Array, kp0_um_inv: number,
   scales: { xi_um: number; t0_s: number; ncal: number; na_um2: number; density_um3: number },
   geom: CollisionGeometry, gridCoverage: number,
+  stopKpFraction: number,
 ): WKEResult {
+  const isHalf = Math.abs(stopKpFraction - 0.5) < 1e-12;
   return {
     type: 'result',
     runId,
@@ -64,9 +66,13 @@ function toResultMessage(
     continuation,
     k_um_inv: Array.from(k_um_inv),
     kp0_um_inv,
-    reachedHalf: result.reachedHalf,
-    tauHalf: result.tauHalf,
-    dtHalf_s: result.dtHalf_s,
+    stopKpFraction,
+    reachedTarget: result.reachedHalf,
+    tauTarget: result.tauHalf,
+    dtTarget_s: result.dtHalf_s,
+    reachedHalf: isHalf && result.reachedHalf,
+    tauHalf: isHalf ? result.tauHalf : null,
+    dtHalf_s: isHalf ? result.dtHalf_s : null,
     snapshots: result.snapshots.map((s) => ({
       tau: s.tau,
       t_s: s.t_s,
@@ -124,7 +130,7 @@ self.onmessage = (e: MessageEvent<WKERequest>) => {
       const result = runWKE({
         kernel, geom, t0_s: scales.t0_s, xi_um: scales.xi_um,
         kp0_um_inv: kp0, f0, tauMax: req.tauMax, rtol: req.rtol, atol: req.rtol * 1e-3,
-        nSnapshots: req.nSnapshots,
+        nSnapshots: req.nSnapshots, stopKpFraction: req.stopKpFraction,
         onProgress,
       });
 
@@ -134,7 +140,7 @@ self.onmessage = (e: MessageEvent<WKERequest>) => {
       continuationRtol[kernel] = req.rtol;
       post(toResultMessage(
         runId, kernel, false, result, k_um_inv, kp0,
-        { ...scales, density_um3: req.density_um3 }, geom, gridCoverage,
+        { ...scales, density_um3: req.density_um3 }, geom, gridCoverage, req.stopKpFraction,
       ));
       return;
     }
@@ -151,11 +157,12 @@ self.onmessage = (e: MessageEvent<WKERequest>) => {
       kernel, geom, t0_s: scales.t0_s, xi_um: scales.xi_um,
       kp0_um_inv: req.kp0_um_inv, f0,
       // Infinity means the accepted-step budget, rather than elapsed time,
-      // ends a post-half continuation. A pre-half continuation still stops at
-      // the half-peak event.
+      // ends a post-target continuation. A pre-target continuation still stops
+      // at the configured peak-ratio event.
       tauMax: Infinity,
       rtol, atol: rtol * 1e-3,
-      haltOnHalf: !req.alreadyHalved,
+      haltOnHalf: !req.alreadyReachedTarget,
+      stopKpFraction: req.stopKpFraction,
       nSnapshots: req.nSnapshots,
       snapshotIntervalTau,
       maxSteps,
@@ -165,7 +172,7 @@ self.onmessage = (e: MessageEvent<WKERequest>) => {
     lastF[kernel] = result.finalF;
     post(toResultMessage(
       runId, kernel, true, result, k_um_inv, req.kp0_um_inv,
-      { ...scales, density_um3: req.density_um3 }, geom, 1,
+      { ...scales, density_um3: req.density_um3 }, geom, 1, req.stopKpFraction,
     ));
   } catch (err) {
     post({

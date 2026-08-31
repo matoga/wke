@@ -19,7 +19,7 @@ import { useWKEWorker } from './hooks/useWKEWorker';
 import { computeDescriptors } from './physics/descriptors';
 import { derivePhysics, classicalRunParameters } from './physics/modes';
 import { predictDeltaT } from './physics/calibration';
-import { getPreset, DEFAULT_PRESET_KEY } from './physics/presets';
+import { getPreset, DEFAULT_PRESET_KEY, PRESETS } from './physics/presets';
 import {
   DEFAULT_SPECIES_KEY, REFERENCE_DENSITY_UM3, REFERENCE_A_A0, SPECIES,
 } from './physics/constants';
@@ -49,6 +49,28 @@ const DEFAULT_FIELDS: Record<ParameterMode, ParameterFields> = {
 };
 
 const PARAMETERS_STORAGE_KEY = 'wke-system-parameters-v1';
+const PRESET_STORAGE_KEY = 'wke-selected-preset-v1';
+const STOP_FRACTION_STORAGE_KEY = 'wke-stop-kp-fraction-v1';
+
+function loadStopKpFraction(): number {
+  try {
+    const value = Number(localStorage.getItem(STOP_FRACTION_STORAGE_KEY));
+    if (value > 0 && value < 1) return value;
+  } catch {
+    // Storage can be unavailable in privacy-restricted browser contexts.
+  }
+  return 0.5;
+}
+
+function loadSavedPresetKey(): string {
+  try {
+    const saved = localStorage.getItem(PRESET_STORAGE_KEY);
+    if (saved && PRESETS.some((preset) => preset.key === saved)) return saved;
+  } catch {
+    // Storage can be unavailable in privacy-restricted browser contexts.
+  }
+  return DEFAULT_PRESET_KEY;
+}
 
 interface SavedParameters {
   mode: ParameterMode;
@@ -102,10 +124,15 @@ function useDarkMode() {
 export default function App() {
   const { dark, toggle } = useDarkMode();
 
-  const [presetKey, setPresetKey] = useState<string | null>(DEFAULT_PRESET_KEY);
+  const [initialPresetKey] = useState(loadSavedPresetKey);
+  const [presetKey, setPresetKey] = useState<string | null>(initialPresetKey);
   const [spectrum, setSpectrum] = useState<PreparedSpectrum | null>(
-    () => getPreset(DEFAULT_PRESET_KEY).load(),
+    () => getPreset(initialPresetKey).load(),
   );
+
+  useEffect(() => {
+    if (presetKey !== null) localStorage.setItem(PRESET_STORAGE_KEY, presetKey);
+  }, [presetKey]);
 
   const [savedParameters] = useState(loadSavedParameters);
   const [mode, setMode] = useState<ParameterMode>(savedParameters.mode);
@@ -123,6 +150,7 @@ export default function App() {
   const [runMode, setRunMode] = useState<RunMode>('classical');
   const [playKernel, setPlayKernel] = useState<KernelType>('classical');
   const [normMode, setNormMode] = useState<NormMode>('unit');
+  const [stopKpFraction, setStopKpFraction] = useState(loadStopKpFraction);
   const solver = useWKEWorker();
   const preview = useWKEWorker();
 
@@ -146,7 +174,12 @@ export default function App() {
     na_um2: derived.na_um2,
     N: derived.N,
     V_um3: derived.V_um3,
-  }), [spectrum, mode, speciesKey, derived]);
+    stopKpFraction,
+  }), [spectrum, mode, speciesKey, derived, stopKpFraction]);
+
+  useEffect(() => {
+    localStorage.setItem(STOP_FRACTION_STORAGE_KEY, String(stopKpFraction));
+  }, [stopKpFraction]);
   const [lastSolverFingerprint, setLastSolverFingerprint] = useState<string | null>(null);
   const [lastPreviewFingerprint, setLastPreviewFingerprint] = useState<string | null>(null);
   const [solverProvenance, setSolverProvenance] = useState<RunProvenance | null>(null);
@@ -277,6 +310,7 @@ export default function App() {
       origin: 'solver', spectrumLabel: spectrum.raw.label, mode, speciesKey,
       density_um3: derived.density_um3, a_a0: derived.a_a0, na_um2: derived.na_um2,
       N: derived.N, V_um3: derived.V_um3, tauMax: 400, rtol: 1e-7, nSnapshots: 150,
+      stopKpFraction,
     });
     solver.run({
       kernels,
@@ -287,6 +321,7 @@ export default function App() {
       tauMax: 400,
       rtol: 1e-7,
       nSnapshots: 150,
+      stopKpFraction,
     });
   };
 
@@ -305,6 +340,7 @@ export default function App() {
       tauMax: 40,
       rtol: 1e-9,
       nSnapshots: 150,
+      stopKpFraction,
     });
   };
 
@@ -489,6 +525,8 @@ kappa   = 3.932378e-6 s*um^-2`}
                 canRun={blockedReason == null}
                 blockedReason={blockedReason}
                 runIsStale={solverIsStale}
+                stopKpFraction={stopKpFraction}
+                onStopKpFraction={setStopKpFraction}
               /></div>
           </>
         )}
@@ -534,6 +572,7 @@ kappa   = 3.932378e-6 s*um^-2`}
                 runs={solver.runs}
                 runIsStale={solverIsStale}
                 usingRefinedNa={Boolean(fields.na_override_um2)}
+                stopKpFraction={stopKpFraction}
               />
 
               <CalibrationMapCard desc={desc} na_um2={derived.na_um2} dt_half_s={dtForMap} />

@@ -14,6 +14,8 @@ export interface WKERunRequest {
   a_a0: number;
   speciesKey: string;
   tauMax: number;
+  /** Stop when k_p(t) / k_p,0 reaches this value (0 < value < 1). */
+  stopKpFraction: number;
   rtol: number;
   /** number of intermediate states saved for the timeline; more = smoother scrubbing, slightly slower */
   nSnapshots: number;
@@ -28,10 +30,12 @@ export interface WKEContinueRequest {
   speciesKey: string;
   /** Legacy field; continuations now end after the retained accepted-step budget. */
   extraSeconds: number;
-  /** the original run's k_p,0, so a not-yet-halved run can still detect the crossing */
+  /** the original run's k_p,0, so a pre-target run can still detect the crossing */
   kp0_um_inv: number;
-  /** whether the run being extended had already crossed k_p,0/2 */
-  alreadyHalved: boolean;
+  /** Stop threshold inherited from the original run. */
+  stopKpFraction: number;
+  /** whether the run being extended had already crossed its stop threshold */
+  alreadyReachedTarget: boolean;
   nSnapshots: number;
 }
 
@@ -70,6 +74,11 @@ export interface WKEResult {
   /** physical k grid the solver actually used [μm⁻¹] */
   k_um_inv: number[];
   kp0_um_inv: number;
+  stopKpFraction: number;
+  reachedTarget: boolean;
+  tauTarget: number | null;
+  dtTarget_s: number | null;
+  /** Backward-compatible half-time fields; populated only for stopKpFraction = 0.5. */
   reachedHalf: boolean;
   tauHalf: number | null;
   dtHalf_s: number | null;
@@ -143,4 +152,5 @@ export interface RunProvenance {
   tauMax: number;
   rtol: number;
   nSnapshots: number;
+  stopKpFraction: number;
 }
