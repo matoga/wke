@@ -12,6 +12,8 @@ import type { WKERequest, WKEResponse } from '../types/wke';
 
 const contexts = new Map<string, RunContext>();
 let backend: SimulationBackend | null = null;
+let activeRunId: string | null = null;
+let stopRunId: string | null = null;
 
 function post(m: WKEResponse): void {
   self.postMessage(m);
@@ -36,20 +38,29 @@ function getBackend(): SimulationBackend {
 self.onmessage = async (e: MessageEvent<WKERequest>) => {
   const req = e.data;
   if (req.type === 'cancel') return;
+  if (req.type === 'stop') {
+    if (req.runId === activeRunId) stopRunId = req.runId;
+    return;
+  }
+  activeRunId = req.runId;
+  stopRunId = null;
   try {
     const be = getBackend();
     if (req.type === 'run') {
-      const { result, context } = await runSimulation(req, be, post);
+      const { result, context } = await runSimulation(req, be, post, () => stopRunId === req.runId);
       contexts.set(result.runKey, context);
       post(result);
       return;
     }
     const ctx = contexts.get(req.runKey);
     if (!ctx) throw new Error('This run is no longer in the solver; run it again to continue.');
-    const { result, context } = await continueSimulation(req, ctx, be, post);
+    const { result, context } = await continueSimulation(req, ctx, be, post, () => stopRunId === req.runId);
     contexts.set(result.runKey, context);
     post(result);
   } catch (err) {
     post({ type: 'error', runId: req.runId, message: err instanceof Error ? err.message : String(err) });
+  } finally {
+    activeRunId = null;
+    stopRunId = null;
   }
 };

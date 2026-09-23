@@ -7,7 +7,7 @@
 import { PEAK_DEPTH, peakMomentumFromF } from './descriptors';
 import type { RhsDiagnostics, RhsFunction } from './rhs';
 
-export type Termination = 'target' | 'tauMax' | 'steps' | 'pole' | 'nonfinite';
+export type Termination = 'target' | 'tauMax' | 'steps' | 'pole' | 'nonfinite' | 'stopped';
 
 // --- Dormand–Prince 5(4) tableau -------------------------------------------
 const C2 = 1 / 5, C3 = 3 / 10, C4 = 4 / 5, C5 = 8 / 9;
@@ -94,6 +94,9 @@ export interface IntegrationConfig {
    */
   tauEval?: ArrayLike<number>;
   onProgress?: (info: { pct: number; tau: number; kp: number; nSteps: number; nRhs: number; diag: RhsDiagnostics }) => void;
+  /** Copies of accepted states for the UI; never used by the solver. */
+  onLive?: (snapshot: Snapshot) => void;
+  shouldStop?: () => boolean;
   /** peak-estimator depth (see PEAK_DEPTH); 0 is the three-point parabola */
   peakDepth?: number;
   /** minimum wall time between progress callbacks (ms) */
@@ -158,7 +161,7 @@ export async function runWKE(config: IntegrationConfig): Promise<IntegrationResu
   const {
     rhs: rhsFn, grid: p, gridWeights: wq, t0_s, xi_um, kp0_um_inv, f0, tauMax,
     rtol = 1e-7, atol = 1e-10, nSnapshots = 40, snapshotIntervalTau,
-    maxSteps = 200000, tauEval, onProgress, progressInterval_ms = 150,
+    maxSteps = 200000, tauEval, onProgress, onLive, shouldStop, progressInterval_ms = 150,
     haltOnHalf = true, stopKpFraction = 0.5, peakDepth = PEAK_DEPTH,
   } = config;
 
@@ -199,6 +202,7 @@ export async function runWKE(config: IntegrationConfig): Promise<IntegrationResu
   const kpOf = (f: Float64Array) => peakMomentumFromF(k_um_inv, f, peakDepth);
 
   const snapshots: Snapshot[] = [];
+  const liveSnapshots: Snapshot[] = [];
   const kpTrack = {
     tau: [] as number[], t_s: [] as number[], kp: [] as number[], loop: [] as number[], pole: [] as number[],
   };
@@ -207,19 +211,22 @@ export async function runWKE(config: IntegrationConfig): Promise<IntegrationResu
   let maxDN = 0;
   let maxDE = 0;
 
-  const makeSnapshot = (t: number, f: Float64Array, stage: string): Snapshot => {
+  const makeSnapshot = (t: number, f: Float64Array, stage: string, trackDrift = true): Snapshot => {
     const q = new Float64Array(n);
     for (let i = 0; i < n; i++) {
       q[i] = (k_um_inv[i] * k_um_inv[i] * f[i]) / (twoPi2 * dens0);
     }
     const dN = (numberMoment(p, wq, f) - n0) / n0;
     const dE = (energyMoment(p, wq, f) - e0) / e0;
-    maxDN = Math.max(maxDN, Math.abs(dN));
-    maxDE = Math.max(maxDE, Math.abs(dE));
+    if (trackDrift) {
+      maxDN = Math.max(maxDN, Math.abs(dN));
+      maxDE = Math.max(maxDE, Math.abs(dE));
+    }
     return { tau: t, t_s: t * t0_s, kp_um_inv: kpOf(f), q, dN_over_N: dN, dE_over_E: dE, stage };
   };
 
   snapshots.push(makeSnapshot(0, y, 'initial'));
+  onLive?.(snapshots[0]);
 
   const timelineTargets: Array<{ target: number; label: string; done: boolean }> = [];
   if (haltOnHalf && nSnapshots > 2) {
@@ -284,6 +291,7 @@ export async function runWKE(config: IntegrationConfig): Promise<IntegrationResu
     : Infinity;
 
   while (termination === null && tau < tauMax && nSteps < maxSteps && !(haltOnHalf && reachedHalf)) {
+    if (shouldStop?.()) { termination = 'stopped'; break; }
     if (tau + h > tauMax) h = tauMax - tau;
     if (consecutiveRejects > 60 || !(h > 0)) {
       termination = 'nonfinite';
@@ -405,6 +413,17 @@ export async function runWKE(config: IntegrationConfig): Promise<IntegrationResu
           ? Math.min(1, Math.max(0, (kp0_um_inv - kpNew) / (kp0_um_inv - halfTarget)))
           : Math.min(1, nSteps / maxSteps);
         onProgress({ pct, tau, kp: kpNew, nSteps, nRhs, diag });
+        if (onLive) {
+          const live = makeSnapshot(tau, y, 'live', false);
+          onLive(live);
+          liveSnapshots.push(live);
+          if (liveSnapshots.length > 160) {
+            liveSnapshots.splice(0, liveSnapshots.length, ...liveSnapshots.filter((_, i) => i % 2 === 0));
+          }
+        }
+        // Let the worker receive Stop even when the RHS falls back to a local,
+        // synchronous implementation whose awaited calls only yield microtasks.
+        if (shouldStop) await new Promise<void>((resolve) => setTimeout(resolve, 0));
       }
     }
 
@@ -423,8 +442,11 @@ export async function runWKE(config: IntegrationConfig): Promise<IntegrationResu
     snapshots.push(makeSnapshot(tau, y, 'final'));
   }
 
+  if (termination === 'stopped') snapshots.push(...liveSnapshots);
+
   // Snapshots may be produced slightly out of order across stage/sample paths.
   snapshots.sort((a, b) => a.tau - b.tau);
+  onLive?.(snapshots[snapshots.length - 1]);
 
   if (termination === null) {
     if (haltOnHalf && reachedHalf) termination = 'target';

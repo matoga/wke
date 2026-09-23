@@ -1,13 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Segmented } from '../ui/primitives';
-import { NORM_MODES } from '../ui/norm';
-import type { NormMode } from '../ui/norm';
 import { load, save } from '../state/storage';
 
 type Theme = 'auto' | 'light' | 'dark';
 const isTheme = (v: unknown): v is Theme => v === 'auto' || v === 'light' || v === 'dark';
 
-export function AppHeader({ norm, onNorm }: { norm: NormMode; onNorm: (m: NormMode) => void }) {
+export function AppHeader() {
   const [theme, setTheme] = useState<Theme>(() => load('theme', 'auto', isTheme));
   useEffect(() => {
     const root = document.documentElement;
@@ -27,8 +25,6 @@ export function AppHeader({ norm, onNorm }: { norm: NormMode; onNorm: (m: NormMo
         </p>
       </div>
       <div className="toolbar">
-        <Segmented<NormMode> ariaLabel="Spectrum normalisation" value={norm} onChange={onNorm}
-          options={NORM_MODES.map((m) => ({ id: m.id, label: m.label, title: m.title }))} />
         <Segmented<Theme> ariaLabel="Colour theme" value={theme} onChange={setTheme}
           options={[{ id: 'auto', label: 'Auto' }, { id: 'light', label: 'Light' }, { id: 'dark', label: 'Dark' }]} />
       </div>

@@ -11,13 +11,14 @@ import { PRECISION } from '../physics/precision';
 import type { RunRecord } from '../state/useRunLibrary';
 
 export function KpCompareCard({
-  records, selectedKey, onSelect, stopKpFraction,
+  records, selectedKey, onSelect, stopKpFraction, onStopKpFractionChange,
 }: {
   /** runs on the current setup, in model order */
   records: RunRecord[];
   selectedKey: string | null;
   onSelect: (key: string) => void;
   stopKpFraction: number;
+  onStopKpFractionChange?: (fraction: number) => void;
 }) {
   const [yMode, setYMode] = useState<'ratio' | 'abs'>('ratio');
   const [xChoice, setXChoice] = useState<'linear' | 'log' | null>(null);
@@ -68,7 +69,22 @@ export function KpCompareCard({
           <Plot
             series={series}
             points={points}
-            markers={[{ id: 'stop', axis: 'y', value: stopKpFraction * (yMode === 'ratio' ? 1 : kp0), label: 'target', color: 'var(--faint)' }]}
+            markers={[{
+              id: 'stop',
+              axis: 'y',
+              value: stopKpFraction * (yMode === 'ratio' ? 1 : kp0),
+              label: 'target',
+              color: 'var(--faint)',
+              draggable: onStopKpFractionChange != null,
+              min: 0.05 * (yMode === 'ratio' ? 1 : kp0),
+              max: 0.99 * (yMode === 'ratio' ? 1 : kp0),
+              title: `Target: ${(stopKpFraction * 100).toFixed(0)}% of initial peak kₚ,₀ (${(stopKpFraction * kp0).toFixed(3)} μm⁻¹). Drag vertically to adjust.`,
+              onChange: (val) => {
+                const rawFrac = yMode === 'ratio' ? val : val / kp0;
+                const clamped = Math.min(0.99, Math.max(0.05, rawFrac));
+                onStopKpFractionChange?.(Math.round(clamped * 100) / 100);
+              },
+            }]}
             xLabel="t (ms)"
             yLabel={yMode === 'ratio' ? 'kₚ / kₚ,₀' : 'kₚ (μm⁻¹)'}
             xScale={xScale}

@@ -86,23 +86,36 @@ export default function App() {
 
   return (
     <div className="wrap">
-      <AppHeader norm={normMode} onNorm={setNormMode} />
+      <AppHeader />
 
       <div className="main">
         <div className="stack">
           <div className="slot o2">
             <SpectrumCard
               record={selected}
+              live={lib.live}
               stale={stale}
               spectrum={source.spectrum}
+              desc={source.descriptors}
+              stopKpFraction={settings.stopKpFraction}
+              onStopKpFractionChange={(stopKpFraction) => sim.update({ stopKpFraction })}
               norm={norm}
+              density={derived.density_um3}
+              normMode={normMode}
+              onNormMode={setNormMode}
               running={lib.progress.running}
               canContinue={selected != null && lib.canContinue(selected.key)}
               onContinue={() => selected && lib.continueRun(selected.key)}
             />
           </div>
           <div className="slot o3">
-            <KpCompareCard records={compared} selectedKey={lib.selectedKey} onSelect={lib.setSelectedKey} stopKpFraction={settings.stopKpFraction} />
+            <KpCompareCard
+              records={compared}
+              selectedKey={lib.selectedKey}
+              onSelect={lib.setSelectedKey}
+              stopKpFraction={settings.stopKpFraction}
+              onStopKpFractionChange={(stopKpFraction) => sim.update({ stopKpFraction })}
+            />
           </div>
           <div className="slot o6">
             <InitialStateCard
@@ -130,7 +143,8 @@ export default function App() {
               runBlocker={runBlocker}
               onRun={() => lib.run([job(settings.model)])}
               onRunAll={() => lib.run(MODELS.map((m) => job(m.id)))}
-              onCancel={lib.cancel}
+              onCancel={lib.stop}
+              onStopAndReset={() => { lib.cancel(); lib.clear(); }}
             />
           </div>
           <div className="slot o4">
@@ -144,7 +158,7 @@ export default function App() {
             />
           </div>
           <div className="slot o5">
-            <OccupationCard record={selected} records={compared} spectrum={source.spectrum} density={derived.density_um3} />
+            <OccupationCard records={compared} />
           </div>
           <div className="slot o7">
             <ExportCard spectrum={source.spectrum} atomNumber={derived.N} selected={selected} compared={compared} />

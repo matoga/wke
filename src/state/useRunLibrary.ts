@@ -11,7 +11,7 @@ import { MODEL_BY_ID } from '../physics/models';
 import type { AccuracyLevel } from '../physics/precision';
 import { PRECISION, nextLevel } from '../physics/precision';
 import { runKeyOf } from '../types/wke';
-import type { WKEContinueRequest, WKEResponse, WKEResult, WKERunRequest } from '../types/wke';
+import type { WKEContinueRequest, WKELive, WKEResponse, WKEResult, WKERunRequest, WKESnapshot } from '../types/wke';
 
 export interface RunSetup {
   fingerprint: string;
@@ -38,6 +38,20 @@ export interface RunRecord {
   check?: ConvergenceCheck | 'pending';
 }
 
+export interface LiveRun {
+  sourceRunId: string;
+  runId: string;
+  runKey: string;
+  model: WKELive['model'];
+  kernel: WKELive['kernel'];
+  components: number;
+  k_um_inv: number[];
+  kp0_um_inv: number;
+  stopKpFraction: number;
+  scales: Pick<WKEResult['scales'], 'density_um3'>;
+  snapshots: WKESnapshot[];
+}
+
 export interface RunJob {
   model: ModelId;
   kernel: KernelType;
@@ -53,6 +67,7 @@ interface QueuedJob extends RunJob {
 
 export interface RunProgress {
   running: boolean;
+  stopping?: boolean;
   label: string;
   phase: 'setup' | 'integrating' | 'continuing' | '';
   pct: number;
@@ -131,6 +146,7 @@ function sampleTimes(result: WKEResult, max = 60): number[] {
 export function useRunLibrary(setup: RunSetup | null) {
   const workerRef = useRef<Worker | null>(null);
   const runIdRef = useRef('');
+  const stopRequestedRef = useRef(false);
   const queueRef = useRef<QueuedJob[]>([]);
   const currentRef = useRef<QueuedJob | null>(null);
   const setupRef = useRef<RunSetup | null>(null);
@@ -140,6 +156,7 @@ export function useRunLibrary(setup: RunSetup | null) {
   recordsRef.current = records;
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [progress, setProgress] = useState<RunProgress>(IDLE);
+  const [live, setLive] = useState<LiveRun | null>(null);
 
   const label = (job: RunJob, purpose: 'main' | 'check') => {
     const m = MODEL_BY_ID[job.model];
@@ -152,7 +169,9 @@ export function useRunLibrary(setup: RunSetup | null) {
     if (!s) return;
     const id = `run-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     runIdRef.current = id;
+    stopRequestedRef.current = false;
     currentRef.current = job;
+    setLive(null);
     const req: WKERunRequest = {
       type: 'run',
       runId: id,
@@ -201,6 +220,28 @@ export function useRunLibrary(setup: RunSetup | null) {
         }));
         return;
       }
+      if (msg.type === 'live') {
+        if (currentRef.current?.purpose === 'check') return;
+        setLive((prev) => {
+          const prior = msg.continuation ? recordsRef.current[msg.runKey]?.result : undefined;
+          const offsetT = prior?.snapshots.at(-1)?.t_s ?? 0;
+          const offsetTau = prior?.snapshots.at(-1)?.tau ?? 0;
+          const snapshot = { ...msg.snapshot, t_s: msg.snapshot.t_s + offsetT, tau: msg.snapshot.tau + offsetTau,
+            stage: msg.continuation && msg.snapshot.stage === 'initial' ? 'continued' : msg.snapshot.stage };
+          const first = prev?.sourceRunId === msg.runId ? prev : {
+            sourceRunId: msg.runId, runId: prior?.runId ?? msg.runId, runKey: msg.runKey,
+            model: msg.model, kernel: msg.kernel, components: msg.components,
+            k_um_inv: msg.k_um_inv, kp0_um_inv: msg.kp0_um_inv,
+            stopKpFraction: msg.stopKpFraction, scales: { density_um3: msg.density_um3 },
+            snapshots: prior?.snapshots ?? [],
+          };
+          const snapshots = [...first.snapshots, snapshot];
+          return { ...first, snapshots: snapshots.length <= 160 ? snapshots
+            : [snapshots[0], ...snapshots.slice(1).filter((_, i) => i % 2 === 0)] };
+        });
+        return;
+      }
+      setLive(null);
       if (msg.type === 'error') {
         queueRef.current = [];
         currentRef.current = null;
@@ -222,14 +263,15 @@ export function useRunLibrary(setup: RunSetup | null) {
         setRecords((prev) => {
           const main = prev[mainKey];
           if (!main) return prev;
-          return { ...prev, [mainKey]: { ...main, check: compareRuns(main.result, msg, msg.accuracy) } };
+          return { ...prev, [mainKey]: { ...main, check: stopRequestedRef.current || msg.termination === 'stopped'
+            ? undefined : compareRuns(main.result, msg, msg.accuracy) } };
         });
         advance(w);
         return;
       }
       const fingerprint = setupRef.current?.fingerprint ?? '';
       const next = nextLevel(msg.accuracy);
-      const wantCheck = job?.checkConvergence && next != null && msg.dtTarget_s != null;
+      const wantCheck = !stopRequestedRef.current && job?.checkConvergence && next != null && msg.dtTarget_s != null;
       setRecords((prev) => ({
         ...prev,
         [msg.runKey]: { key: msg.runKey, result: msg, fingerprint, check: wantCheck ? 'pending' : undefined },
@@ -253,6 +295,7 @@ export function useRunLibrary(setup: RunSetup | null) {
   }, [advance]);
 
   useEffect(() => () => { workerRef.current?.terminate(); }, []);
+  useEffect(() => { setupRef.current = setup; }, [setup]);
 
   const run = useCallback((jobs: RunJob[]) => {
     if (!setup || jobs.length === 0) return;
@@ -267,18 +310,23 @@ export function useRunLibrary(setup: RunSetup | null) {
     if (!rec || !workerRef.current) return;
     const id = `cont-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     runIdRef.current = id;
+    stopRequestedRef.current = false;
     currentRef.current = null;
     queueRef.current = [];
+    const targetFrac = setupRef.current?.stopKpFraction ?? rec.result.stopKpFraction;
+    const currentKp = rec.result.snapshots.at(-1)?.kp_um_inv ?? rec.result.kp0_um_inv;
+    const reachedNewTarget = currentKp <= targetFrac * rec.result.kp0_um_inv;
     const req: WKEContinueRequest = {
       type: 'continue',
       runId: id,
       runKey: key,
-      alreadyReachedTarget: rec.result.reachedTarget,
+      alreadyReachedTarget: reachedNewTarget,
       kp0_um_inv: rec.result.kp0_um_inv,
-      stopKpFraction: rec.result.stopKpFraction,
+      stopKpFraction: targetFrac,
       nSnapshots: NSNAPSHOTS,
     };
     const m = MODEL_BY_ID[rec.result.model];
+    setLive(null);
     setProgress({ running: true, label: `Continuing ${m.short}`, phase: 'continuing', pct: 0, queued: 0 });
     workerRef.current.postMessage(req);
   }, []);
@@ -289,6 +337,8 @@ export function useRunLibrary(setup: RunSetup | null) {
     queueRef.current = [];
     currentRef.current = null;
     runIdRef.current = '';
+    stopRequestedRef.current = false;
+    setLive(null);
     setRecords((prev) => {
       const next: Record<string, RunRecord> = {};
       for (const [k, r] of Object.entries(prev)) next[k] = r.check === 'pending' ? { ...r, check: undefined } : r;
@@ -300,13 +350,22 @@ export function useRunLibrary(setup: RunSetup | null) {
   const clear = useCallback(() => {
     setRecords({});
     setSelectedKey(null);
+    setLive(null);
+  }, []);
+
+  const stop = useCallback(() => {
+    if (!workerRef.current || !runIdRef.current) return;
+    queueRef.current = [];
+    stopRequestedRef.current = true;
+    setProgress((prev) => ({ ...prev, stopping: true, queued: 0 }));
+    workerRef.current.postMessage({ type: 'stop', runId: runIdRef.current });
   }, []);
 
   /** Whether the worker still holds the end state needed to continue a run. */
   const canContinue = (key: string) => workerRef.current != null && key in recordsRef.current;
 
   return {
-    records, selectedKey, setSelectedKey, progress, run, continueRun, cancel, clear, canContinue,
+    records, live, selectedKey, setSelectedKey, progress, run, continueRun, stop, cancel, clear, canContinue,
     keyOf: runKeyOf,
   };
 }

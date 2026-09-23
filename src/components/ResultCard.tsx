@@ -24,7 +24,7 @@ export interface ScaleSummary {
 }
 
 export function ResultCard({
-  record, stale, progress, settings, derived, desc, scales, canRun, runBlocker, onRun, onRunAll, onCancel,
+  record, stale, progress, settings, derived, desc, scales, canRun, runBlocker, onRun, onRunAll, onCancel, onStopAndReset,
 }: {
   record: RunRecord | null;
   stale: boolean;
@@ -38,6 +38,7 @@ export function ResultCard({
   onRun: () => void;
   onRunAll: () => void;
   onCancel: () => void;
+  onStopAndReset: () => void;
 }) {
   const r = record?.result ?? null;
   const t = time(r?.dtTarget_s ?? null);
@@ -71,10 +72,11 @@ export function ResultCard({
   let statusText: string;
   if (progress.error) statusText = progress.error;
   else if (running) {
-    const where = progress.phase === 'setup'
+    const where = progress.stopping ? 'stopping after the current solver step'
+      : progress.phase === 'setup'
       ? 'building tables'
       : `${Math.round(100 * progress.pct)}%${progress.t_s != null ? ` · t = ${time(progress.t_s).value} ${time(progress.t_s).unit}` : ''}`;
-    statusText = `${progress.label} · ${where}${progress.elapsed_ms != null ? ` · ${duration(progress.elapsed_ms)}` : ''}${progress.queued ? ` · ${progress.queued} queued` : ''}`;
+    statusText = `${progress.label} · ${where}${progress.kp != null ? ` · kₚ = ${fmt(progress.kp, 4)} μm⁻¹` : ''}${progress.elapsed_ms != null ? ` · ${duration(progress.elapsed_ms)}` : ''}${progress.queued ? ` · ${progress.queued} queued` : ''}`;
   } else if (r) {
     statusText = `${runLabel(r)} · ${PRECISION[r.accuracy].label} · ${duration(r.wallTime_ms + r.setup_ms)} · ${r.nSteps} steps · ${(r.nEvents / 1e6).toFixed(2)} M collision events · ${r.threads} thread${r.threads === 1 ? '' : 's'}`;
   } else statusText = runBlocker ?? 'Ready. Choose a model and run.';
@@ -125,7 +127,12 @@ export function ResultCard({
 
       <div className="toolbar">
         {running ? (
-          <button type="button" className="btn big danger" onClick={onCancel}>Stop</button>
+          <>
+            <button type="button" className="btn big" onClick={onCancel} disabled={progress.stopping}
+              title="Stop after the current solver step and keep the partial run.">{progress.stopping ? 'Stopping…' : 'Stop'}</button>
+            <button type="button" className="btn big danger" onClick={onStopAndReset}
+              title="Stop the calculation and clear the saved runs from this page.">Stop &amp; Reset</button>
+          </>
         ) : (
           <button type="button" className="btn primary big" onClick={onRun} disabled={!canRun} title={runBlocker ?? undefined}>
             Run {MODEL_BY_ID[settings.model].short}

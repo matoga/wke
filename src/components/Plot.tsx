@@ -27,6 +27,13 @@ export interface Marker {
   label?: string;
   color: string;
   dashed?: boolean;
+  draggable?: boolean;
+  min?: number;
+  max?: number;
+  step?: number;
+  title?: string;
+  onChange?: (value: number) => void;
+  onCommit?: (value: number) => void;
 }
 
 export interface PointMark {
@@ -121,9 +128,11 @@ export function Plot({
   formatX = defaultFormat, formatY = defaultFormat, ariaLabel, editableSeries,
 }: PlotProps) {
   const ref = useRef<HTMLDivElement>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
   const [width, setWidth] = useState(560);
   const [cursor, setCursor] = useState<{ px: number; x: number } | null>(null);
   const [keyIndex, setKeyIndex] = useState(0);
+  const [draggedMarkerId, setDraggedMarkerId] = useState<string | null>(null);
   const lastPaint = useRef<{ index: number; value: number } | null>(null);
   const painted = useRef<number[] | null>(null);
 
@@ -278,6 +287,7 @@ export function Plot({
   return (
     <div className="plot" ref={ref}>
       <svg
+        ref={svgRef}
         width="100%"
         height={height}
         viewBox={`0 0 ${width} ${height}`}
@@ -287,13 +297,15 @@ export function Plot({
         aria-label={ariaLabel ?? `${yLabel} against ${xLabel}. Arrow keys inspect values${editableSeries ? '; up and down arrows edit' : ''}.`}
         onKeyDown={onKeyDown}
         onMouseMove={(e) => {
+          if (draggedMarkerId) return;
           const rect = e.currentTarget.getBoundingClientRect();
           const px = (e.clientX - rect.left) * (width / rect.width) - MARGIN.left;
           if (px < 0 || px > iw) { setCursor(null); return; }
           setCursor({ px, x: invX(px) });
         }}
-        onMouseLeave={() => setCursor(null)}
+        onMouseLeave={() => { if (!draggedMarkerId) setCursor(null); }}
         onPointerDown={editableSeries ? (e) => {
+          if (draggedMarkerId) return;
           lastPaint.current = null;
           painted.current = null;
           e.currentTarget.setPointerCapture(e.pointerId);
@@ -337,19 +349,253 @@ export function Plot({
                 strokeLinejoin="round" strokeLinecap="round" />
             ))}
 
-            {markers.map((m, mi) => m.axis === 'x' ? (
-              <g key={m.id}>
-                <line x1={sx(m.value)} x2={sx(m.value)} y1={0} y2={ih} style={{ stroke: m.color }} strokeWidth={1.1}
-                  strokeDasharray={m.dashed === false ? undefined : '3 3'} />
-                {m.label && <text x={sx(m.value) + 4} y={12 + 13 * markers.slice(0, mi).filter((o) => o.axis === 'x').length} className="mark-text" style={{ fill: m.color }}>{m.label}</text>}
-              </g>
-            ) : (
-              <g key={m.id}>
-                <line x1={0} x2={iw} y1={sy(m.value)} y2={sy(m.value)} style={{ stroke: m.color }} strokeWidth={1.1}
-                  strokeDasharray={m.dashed === false ? undefined : '3 3'} />
-                {m.label && <text x={iw - 4} y={sy(m.value) - 4} textAnchor="end" className="mark-text" style={{ fill: m.color }}>{m.label}</text>}
-              </g>
-            ))}
+            {markers.map((m, mi) => {
+              const isDragging = draggedMarkerId === m.id;
+              if (m.axis === 'x') {
+                const X = sx(m.value);
+                const xBefore = markers.slice(0, mi).filter((o) => o.axis === 'x').length;
+                const labelY = 12 + 13 * xBefore;
+                const isRightEdge = X > iw - 50;
+                return (
+                  <g
+                    key={m.id}
+                    className={`plot-marker ${m.draggable ? 'mark-draggable' : ''} ${isDragging ? 'dragging' : ''}`}
+                    tabIndex={m.draggable ? 0 : undefined}
+                    role={m.draggable ? 'slider' : undefined}
+                    aria-label={m.label ?? m.id}
+                    aria-valuenow={m.value}
+                    aria-valuemin={m.min}
+                    aria-valuemax={m.max}
+                    onPointerDown={m.draggable ? (e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
+                      setDraggedMarkerId(m.id);
+                    } : undefined}
+                    onPointerMove={m.draggable ? (e) => {
+                      if (draggedMarkerId !== m.id && !e.currentTarget.hasPointerCapture(e.pointerId)) return;
+                      const svg = svgRef.current;
+                      if (!svg) return;
+                      const rect = svg.getBoundingClientRect();
+                      const scaleX = rect.width > 0 ? width / rect.width : 1;
+                      const px = Math.min(iw, Math.max(0, (e.clientX - rect.left) * scaleX - MARGIN.left));
+                      let val = invX(px);
+                      if (m.min != null) val = Math.max(m.min, val);
+                      if (m.max != null) val = Math.min(m.max, val);
+                      if (m.step != null && m.step > 0) val = Math.round(val / m.step) * m.step;
+                      m.onChange?.(val);
+                      setCursor({ px: sx(val), x: val });
+                    } : undefined}
+                    onPointerUp={m.draggable ? (e) => {
+                      try {
+                        if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+                          e.currentTarget.releasePointerCapture(e.pointerId);
+                        }
+                      } catch {}
+                      setDraggedMarkerId(null);
+                      m.onCommit?.(m.value);
+                    } : undefined}
+                    onPointerCancel={m.draggable ? (e) => {
+                      try {
+                        if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+                          e.currentTarget.releasePointerCapture(e.pointerId);
+                        }
+                      } catch {}
+                      setDraggedMarkerId(null);
+                    } : undefined}
+                    onKeyDown={m.draggable ? (e) => {
+                      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const step = m.step ?? (dx1 - dx0) / 100;
+                        const delta = (e.key === 'ArrowRight' ? 1 : -1) * step;
+                        let nextVal = m.value + delta;
+                        if (m.min != null) nextVal = Math.max(m.min, nextVal);
+                        if (m.max != null) nextVal = Math.min(m.max, nextVal);
+                        m.onChange?.(nextVal);
+                        m.onCommit?.(nextVal);
+                      }
+                    } : undefined}
+                  >
+                    {m.draggable && (
+                      <line
+                        x1={X} x2={X} y1={0} y2={ih}
+                        stroke="transparent"
+                        strokeWidth={20}
+                        style={{ cursor: 'ew-resize', pointerEvents: 'stroke', touchAction: 'none' }}
+                      />
+                    )}
+                    <line
+                      x1={X} x2={X} y1={0} y2={ih}
+                      className="mark-line"
+                      style={{ stroke: isDragging ? 'var(--accent)' : m.color }}
+                      strokeWidth={isDragging ? 1.6 : 1.1}
+                      strokeDasharray={m.dashed === false ? undefined : '3 3'}
+                    />
+                    {m.draggable && (
+                      <g className="mark-handle-group" style={{ cursor: 'ew-resize', pointerEvents: 'all' }}>
+                        <rect
+                          x={X - 5}
+                          y={1}
+                          width={10}
+                          height={14}
+                          rx={2}
+                          className="mark-handle"
+                          style={{
+                            fill: isDragging ? 'var(--accent)' : 'var(--panel)',
+                            stroke: isDragging ? 'var(--accent)' : 'var(--faint)',
+                            strokeWidth: 1.2,
+                          }}
+                        />
+                        <line
+                          x1={X - 1.5} x2={X - 1.5} y1={4} y2={12}
+                          style={{ stroke: isDragging ? 'var(--panel)' : 'var(--muted)', strokeWidth: 1 }}
+                        />
+                        <line
+                          x1={X + 1.5} x2={X + 1.5} y1={4} y2={12}
+                          style={{ stroke: isDragging ? 'var(--panel)' : 'var(--muted)', strokeWidth: 1 }}
+                        />
+                      </g>
+                    )}
+                    {m.label && (
+                      <text
+                        x={isRightEdge ? X - (m.draggable ? 8 : 4) : X + (m.draggable ? 8 : 4)}
+                        y={labelY}
+                        textAnchor={isRightEdge ? 'end' : 'start'}
+                        className="mark-text"
+                        style={{
+                          fill: isDragging ? 'var(--accent)' : m.color,
+                          fontWeight: isDragging ? 600 : undefined,
+                          cursor: m.draggable ? 'ew-resize' : undefined,
+                        }}
+                      >
+                        {m.label}
+                      </text>
+                    )}
+                    {m.title && <title>{m.title}</title>}
+                  </g>
+                );
+              }
+              const Y = sy(m.value);
+              return (
+                <g
+                  key={m.id}
+                  className={`plot-marker ${m.draggable ? 'mark-draggable mark-draggable-y' : ''} ${isDragging ? 'dragging' : ''}`}
+                  tabIndex={m.draggable ? 0 : undefined}
+                  role={m.draggable ? 'slider' : undefined}
+                  aria-label={m.label ?? m.id}
+                  aria-valuenow={m.value}
+                  aria-valuemin={m.min}
+                  aria-valuemax={m.max}
+                  onPointerDown={m.draggable ? (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
+                    setDraggedMarkerId(m.id);
+                  } : undefined}
+                  onPointerMove={m.draggable ? (e) => {
+                    if (draggedMarkerId !== m.id && !e.currentTarget.hasPointerCapture(e.pointerId)) return;
+                    const svg = svgRef.current;
+                    if (!svg) return;
+                    const rect = svg.getBoundingClientRect();
+                    const scaleY = rect.height > 0 ? height / rect.height : 1;
+                    const py = Math.min(ih, Math.max(0, (e.clientY - rect.top) * scaleY - MARGIN.top));
+                    let val = invY(py);
+                    if (m.min != null) val = Math.max(m.min, val);
+                    if (m.max != null) val = Math.min(m.max, val);
+                    if (m.step != null && m.step > 0) val = Math.round(val / m.step) * m.step;
+                    m.onChange?.(val);
+                  } : undefined}
+                  onPointerUp={m.draggable ? (e) => {
+                    try {
+                      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+                        e.currentTarget.releasePointerCapture(e.pointerId);
+                      }
+                    } catch {}
+                    setDraggedMarkerId(null);
+                    m.onCommit?.(m.value);
+                  } : undefined}
+                  onPointerCancel={m.draggable ? (e) => {
+                    try {
+                      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+                        e.currentTarget.releasePointerCapture(e.pointerId);
+                      }
+                    } catch {}
+                    setDraggedMarkerId(null);
+                  } : undefined}
+                  onKeyDown={m.draggable ? (e) => {
+                    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      const step = m.step ?? (dy1 - dy0) / 100;
+                      const delta = (e.key === 'ArrowUp' ? 1 : -1) * step;
+                      let nextVal = m.value + delta;
+                      if (m.min != null) nextVal = Math.max(m.min, nextVal);
+                      if (m.max != null) nextVal = Math.min(m.max, nextVal);
+                      m.onChange?.(nextVal);
+                      m.onCommit?.(nextVal);
+                    }
+                  } : undefined}
+                >
+                  {m.draggable && (
+                    <line
+                      x1={0} x2={iw} y1={Y} y2={Y}
+                      stroke="transparent"
+                      strokeWidth={20}
+                      style={{ cursor: 'ns-resize', pointerEvents: 'stroke', touchAction: 'none' }}
+                    />
+                  )}
+                  <line
+                    x1={0} x2={iw} y1={Y} y2={Y}
+                    className="mark-line"
+                    style={{ stroke: isDragging ? 'var(--accent)' : m.color }}
+                    strokeWidth={isDragging ? 1.6 : 1.1}
+                    strokeDasharray={m.dashed === false ? undefined : '3 3'}
+                  />
+                  {m.draggable && (
+                    <g className="mark-handle-group" style={{ cursor: 'ns-resize', pointerEvents: 'all' }}>
+                      <rect
+                        x={iw - 14}
+                        y={Y - 5}
+                        width={14}
+                        height={10}
+                        rx={2}
+                        className="mark-handle"
+                        style={{
+                          fill: isDragging ? 'var(--accent)' : 'var(--panel)',
+                          stroke: isDragging ? 'var(--accent)' : 'var(--faint)',
+                          strokeWidth: 1.2,
+                        }}
+                      />
+                      <line
+                        x1={iw - 11} x2={iw - 3} y1={Y - 1.5} y2={Y - 1.5}
+                        style={{ stroke: isDragging ? 'var(--panel)' : 'var(--muted)', strokeWidth: 1 }}
+                      />
+                      <line
+                        x1={iw - 11} x2={iw - 3} y1={Y + 1.5} y2={Y + 1.5}
+                        style={{ stroke: isDragging ? 'var(--panel)' : 'var(--muted)', strokeWidth: 1 }}
+                      />
+                    </g>
+                  )}
+                  {m.label && (
+                    <text
+                      x={m.draggable ? iw - 18 : iw - 4}
+                      y={Y - 4}
+                      textAnchor="end"
+                      className="mark-text"
+                      style={{
+                        fill: isDragging ? 'var(--accent)' : m.color,
+                        fontWeight: isDragging ? 600 : undefined,
+                        cursor: m.draggable ? 'ns-resize' : undefined,
+                      }}
+                    >
+                      {m.label}
+                    </text>
+                  )}
+                  {m.title && <title>{m.title}</title>}
+                </g>
+              );
+            })}
 
             {points.map((p) => {
               const X = sx(p.x), Y = sy(p.y);

@@ -29,14 +29,10 @@ export function nearestSnapshot(snaps: WKESnapshot[], t: number): number {
   return Math.abs(snaps[hi].t_s - t) < Math.abs(snaps[lo].t_s - t) ? hi : lo;
 }
 
-/** Blue to red ramp for time-coloured overlays. */
+/** Match the main branch's blue → cyan → green → yellow → red time ramp. */
 export function rampColor(u: number): string {
-  const stops = [[59, 111, 216], [127, 88, 201], [195, 79, 134], [217, 72, 59]];
-  const x = Math.min(1, Math.max(0, u)) * (stops.length - 1);
-  const i = Math.min(stops.length - 2, Math.floor(x));
-  const t = x - i;
-  const c = stops[i].map((v, j) => Math.round(v + t * (stops[i + 1][j] - v)));
-  return `rgb(${c[0]}, ${c[1]}, ${c[2]})`;
+  const hue = 240 - 240 * Math.min(1, Math.max(0, u));
+  return `hsl(${hue.toFixed(1)}, 75%, 48%)`;
 }
 
 /** Mean occupation per mode, f = 2π² n q / k². */
@@ -77,6 +73,8 @@ export function terminationVerdict(r: WKEResult): Verdict {
       return { tone: 'bad', text: r.model === 'one-loop' ? 'stopped: bracket turned negative' : 'stopped at the pole', title: r.terminationMessage ?? '' };
     case 'nonfinite':
       return { tone: 'bad', text: 'stopped: equation became too stiff', title: r.terminationMessage ?? '' };
+    case 'stopped':
+      return { tone: 'info', text: 'stopped by user', title: 'The accepted states were kept; this run can be continued.' };
     case 'steps':
       return r.reachedTarget
         ? { tone: 'ok', text: 'extended past the target', title: 'Continued beyond the stop target.' }

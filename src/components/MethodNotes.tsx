@@ -26,7 +26,7 @@ export function MethodNotes() {
         occupations much larger than one, by the four-wave kinetic equation for the isotropic momentum distribution. In
         units where <Tex math="\omega_p = p^2" />, time <Tex math="\tau = \hbar t/2m" /> and <Tex math="\lambda = 4\pi a" />,
       </p>
-      <Tex block math={String.raw`\partial_\tau n_1 = 16\pi\lambda^2 \int d^3p_2\, d^3p_3\, d^3p_4\; n_1n_2n_3n_4\Big(\tfrac{1}{n_1}+\tfrac{1}{n_2}-\tfrac{1}{n_3}-\tfrac{1}{n_4}\Big)\, M_{1234}\;\delta(\omega_1+\omega_2-\omega_3-\omega_4)\,\delta^3(\mathbf p_1+\mathbf p_2-\mathbf p_3-\mathbf p_4)`} />
+      <Tex block math={String.raw`\partial_\tau n_1 = 16\pi\lambda^2 \int d^3p_2\, d^3p_3\, d^3p_4\; n_1n_2n_3n_4\left(\dfrac{1}{n_1}+\dfrac{1}{n_2}-\dfrac{1}{n_3}-\dfrac{1}{n_4}\right)\, M_{1234}\;\delta(\omega_1+\omega_2-\omega_3-\omega_4)\,\delta^3(\mathbf p_1+\mathbf p_2-\mathbf p_3-\mathbf p_4)`} />
       <p>
         with <Tex math="\int d^3p\, n_p" /> equal to the density. The models differ only in the dressing{' '}
         <Tex math="M_{1234}" /> of each collision, built from two one-loop bubbles of the current spectrum: the
@@ -60,10 +60,11 @@ export function MethodNotes() {
       </div>
       <p className="muted">
         The brackets <Tex math="\langle\cdot\rangle_s" /> and <Tex math="\langle\cdot\rangle_t" /> are averages over the
-        angular configurations of each collision. For fixed magnitudes, momentum conservation leaves the total and the
-        transferred momentum uniformly distributed over an interval of length <Tex math="2\min(p_1,p_2,p_3,p_4)" />; the
-        dressing of the resummed models is averaged there as a whole, not built from an averaged loop. Crossed
-        (non-bubble) diagrams beyond one loop are in none of the models.
+        angular configurations of the particle-particle (<Tex math="s" />) and exchange (<Tex math="t" />) channels. For
+        fixed magnitudes, momentum conservation leaves the total and the transferred momentum uniformly distributed over
+        an interval of length <Tex math="2\min(p_1,p_2,p_3,p_4)" />; the dressing of the resummed models is averaged
+        there as a whole, not built from an averaged loop. Crossed (non-bubble) diagrams beyond one loop are in none of
+        the models.
       </p>
 
       <h3>Numerics</h3>

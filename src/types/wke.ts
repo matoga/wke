@@ -45,7 +45,12 @@ export interface WKECancelRequest {
   type: 'cancel';
 }
 
-export type WKERequest = WKERunRequest | WKEContinueRequest | WKECancelRequest;
+export interface WKEStopRequest {
+  type: 'stop';
+  runId: string;
+}
+
+export type WKERequest = WKERunRequest | WKEContinueRequest | WKECancelRequest | WKEStopRequest;
 
 export interface WKEProgress {
   type: 'progress';
@@ -68,6 +73,22 @@ export interface WKESnapshot {
   dN_over_N: number;
   dE_over_E: number;
   stage: string;
+}
+
+/** A display copy of an accepted state. It does not change the solver state. */
+export interface WKELive {
+  type: 'live';
+  runId: string;
+  runKey: string;
+  continuation: boolean;
+  model: ModelId;
+  kernel: KernelType;
+  components: number;
+  k_um_inv: number[];
+  kp0_um_inv: number;
+  stopKpFraction: number;
+  density_um3: number;
+  snapshot: WKESnapshot;
 }
 
 export interface WKEResult {
@@ -120,7 +141,7 @@ export interface WKEError {
   message: string;
 }
 
-export type WKEResponse = WKEProgress | WKEResult | WKEError;
+export type WKEResponse = WKEProgress | WKELive | WKEResult | WKEError;
 
 export function runKeyOf(model: ModelId, kernel: KernelType, accuracy: AccuracyLevel): string {
   return `${model}:${kernel}:${accuracy}`;

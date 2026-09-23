@@ -60,6 +60,29 @@ function restoreFiniteLowKOccupation(qInput: number[]): number[] {
   return q;
 }
 
+/** Taper a prepared fixture after its measured shape, without moving its peak. */
+function smoothPreparedTail(q: number[], start: number, end: number): number[] {
+  const upper = K_DESC.findIndex((k) => k >= start);
+  if (upper <= 0) return q;
+  const lower = upper - 1;
+  const fraction = (start - K_DESC[lower]) / (K_DESC[upper] - K_DESC[lower]);
+  const height = q[lower] + fraction * (q[upper] - q[lower]);
+  return q.map((value, i) => {
+    const k = K_DESC[i];
+    if (k <= start) return value;
+    if (k >= end) return 0;
+    const u = (k - start) / (end - start);
+    return height * Math.exp(-2 * u) * (1 - u) ** 2;
+  });
+}
+
+const PREPARED_TAILS: Record<string, [start: number, end: number]> = {
+  prepared_a: [2.2, 4.0],
+  prepared_b: [3.0, 4.5],
+  prepared_c: [4.0, 5.0],
+  prepared_d: [4.7, 5.5],
+};
+
 const fixturePresets: Preset[] = RECORDS.map((rec) => ({
   key: rec.key,
   name: rec.name,
@@ -73,7 +96,9 @@ const fixturePresets: Preset[] = RECORDS.map((rec) => ({
   load: () =>
     prepareSpectrum({
       k_um_inv: K_DESC,
-      values: restoreFiniteLowKOccupation(rec.q),
+      values: PREPARED_TAILS[rec.key]
+        ? smoothPreparedTail(restoreFiniteLowKOccupation(rec.q), ...PREPARED_TAILS[rec.key])
+        : restoreFiniteLowKOccupation(rec.q),
       convention: 'Nk_over_N',
       label: rec.name,
       source: 'preset',

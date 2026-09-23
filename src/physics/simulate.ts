@@ -9,7 +9,7 @@ import { trapezoidWeights } from './collision';
 import { computeScales } from './scales';
 import { peakMomentumFromF, INPUT_GRID } from './descriptors';
 import { buildInitialF, runWKE } from './integrator';
-import type { IntegrationResult } from './integrator';
+import type { IntegrationResult, Snapshot } from './integrator';
 import { SolverEngine } from './engine';
 import type { EngineSpec, PreparedModel } from './engine';
 import { completeRhs } from './rhs';
@@ -18,7 +18,7 @@ import { SPECIES, DEFAULT_SPECIES_KEY, P_MIN, solverPMax } from './constants';
 import { PRECISION } from './precision';
 import { MODEL_BY_ID, clockFactor } from './models';
 import { runKeyOf } from '../types/wke';
-import type { WKEContinueRequest, WKEProgress, WKEResult, WKERunRequest } from '../types/wke';
+import type { WKEContinueRequest, WKELive, WKEProgress, WKEResult, WKERunRequest } from '../types/wke';
 
 export type BackendSpec = Omit<EngineSpec, 'partition'>;
 
@@ -56,7 +56,24 @@ export interface RunContext {
   nEvents: number;
 }
 
-type ProgressFn = (m: WKEProgress) => void;
+type ProgressFn = (m: WKEProgress | WKELive) => void;
+
+function liveAdapter(
+  runId: string, request: WKERunRequest, continuation: boolean,
+  k_um_inv: Float64Array, kp0: number, stopKpFraction: number,
+  onProgress?: ProgressFn,
+) {
+  if (!onProgress) return undefined;
+  const kernel = MODEL_BY_ID[request.model].allowsQuantum ? request.kernel : 'classical';
+  const grid = Array.from(k_um_inv);
+  return (snapshot: Snapshot) => onProgress({
+    type: 'live', runId, runKey: runKeyOf(request.model, kernel, request.accuracy),
+    continuation, model: request.model, kernel, components: request.components,
+    k_um_inv: grid, kp0_um_inv: kp0, stopKpFraction,
+    density_um3: request.density_um3,
+    snapshot: { ...snapshot, q: Array.from(snapshot.q) },
+  });
+}
 
 function packResult(
   runId: string,
@@ -134,6 +151,7 @@ export async function runSimulation(
   req: WKERunRequest,
   backend: SimulationBackend,
   onProgress?: ProgressFn,
+  shouldStop?: () => boolean,
 ): Promise<{ result: WKEResult; context: RunContext }> {
   const wall0 = performance.now();
   const info = MODEL_BY_ID[req.model];
@@ -180,6 +198,8 @@ export async function runSimulation(
     stopKpFraction: req.stopKpFraction,
     tauEval: req.tEval_s ? req.tEval_s.map((t) => t / t0_s) : undefined,
     onProgress: progressAdapter(req.runId, onProgress, t0_s, wall0),
+    onLive: liveAdapter(req.runId, req, false, k_um_inv, kp0, req.stopKpFraction, onProgress),
+    shouldStop,
   });
 
   const result = packResult(req.runId, req, false, res, k_um_inv, kp0, req.stopKpFraction, scales, setup, backend.threads, gridCoverage);
@@ -205,6 +225,7 @@ export async function continueSimulation(
   ctx: RunContext,
   backend: SimulationBackend,
   onProgress?: ProgressFn,
+  shouldStop?: () => boolean,
 ): Promise<{ result: WKEResult; context: RunContext }> {
   const wall0 = performance.now();
   const level = PRECISION[ctx.request.accuracy];
@@ -228,6 +249,8 @@ export async function continueSimulation(
     snapshotIntervalTau: ctx.snapshotIntervalTau,
     maxSteps: ctx.nSteps,
     onProgress: progressAdapter(req.runId, onProgress, ctx.scales.t0_s, wall0),
+    onLive: liveAdapter(req.runId, ctx.request, true, ctx.k_um_inv, req.kp0_um_inv, req.stopKpFraction, onProgress),
+    shouldStop,
   });
   const result = packResult(
     req.runId, ctx.request, true, res, ctx.k_um_inv, req.kp0_um_inv, req.stopKpFraction, ctx.scales,
