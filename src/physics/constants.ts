@@ -8,24 +8,6 @@ export const BOHR_RADIUS_M = 5.29177210903e-11; // m (CODATA 2018)
 export const BOHR_RADIUS_UM = 5.29177210903e-5; // μm  ← primary unit throughout
 export const UM_TO_M = 1e-6;
 
-/** Calibration parameters (five-peak harmonized fit, validated against Python solver) */
-export const KAPPA_S_UM2 = 3.932378e-6;   // s·μm⁻²  (canonical reference scaling constant)
-export const C0 = 1.3465;
-export const C1 = 2.7162;
-export const C2 = -0.6963;
-
-/** Certified operational domain */
-export const KP_MIN_UM = 1.15;
-export const KP_MAX_UM = 3.00;
-export const DELTA_K_MAX = 0.08;
-export const W_MIN = 0.18;
-export const W_MAX = 0.65;
-
-/** Uncertainty budget (from docs/na_transport_calibration_executive.md) */
-export const SYNTH_CV_SIGMA_PCT = 2.09;      // synthetic grouped-CV 1σ, %
-export const EMPIRICAL_RMS_PCT = 6.15;       // empirical external-holdout RMS, %
-export const KAPPA_SCATTER_PCT = 0.58;       // numerical κ scatter, %
-
 export interface AtomicSpecies {
   label: string;
   symbol: string;
@@ -89,15 +71,13 @@ export const SPECIES: Record<string, AtomicSpecies> = {
 export const DEFAULT_SPECIES_KEY = 'K39';
 
 /**
- * Canonical solver grid, shared with the Python reference implementation.
- * p is dimensionless (p = k ξ); the collision cutoff is p_max/√2 so that the
- * outgoing p3 = √(p1² + p2² − p²) never leaves the state grid.
+ * Canonical solver p range (p = k ξ). The collision cutoff is p_max/√2 so that
+ * the outgoing p3 = √(p1² + p2² − p²) never leaves the state grid. Grid size and
+ * quadrature depend on the accuracy level (precision.ts).
  */
 export const P_MIN = 0.01;
 export const P_MAX = 20.0;
 export const N_GRID = 500;
-export const NQ_LOW = 16;
-export const NQ_HIGH = 16;
 
 /**
  * Keep at least the reference physical-k range when the healing length grows.
@@ -115,8 +95,7 @@ export function solverPMax(xi_um: number): number {
 
 /**
  * Healing length of the reference conditions (n = 2.8331 μm⁻³, a = 50 a₀, ³⁹K).
- * The canonical descriptor grid is the solver grid at these conditions, which
- * makes browser descriptors reproduce the Python fixture values exactly.
+ * The input grid is the Standard solver grid at these conditions.
  */
 export const REFERENCE_XI_UM = 2.30389960057421;
 export const REFERENCE_DENSITY_UM3 = 2.8331;

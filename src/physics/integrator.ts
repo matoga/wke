@@ -1,19 +1,13 @@
 /**
- * Adaptive Dormand–Prince 5(4) integrator with terminal event detection.
- *
- * Mirrors the Python driver used to produce the reference fixtures:
- *   solve_ivp(rhs, (0, tau_max), f0, method="DOP853", events=hit_half,
- *             rtol=1e-6, atol=1e-9)
- * with `hit_half(tau, f) = peak_momentum(k, f) − kp0/2`, terminal, direction −1.
- *
- * DOP853 is replaced by DOPRI5 with tighter tolerances; the half-time is a
- * smooth functional of the trajectory, so the two agree far inside the 1%
- * cross-validation target (see docs/VALIDATION.md).
+ * Adaptive Dormand–Prince 5(4) integrator with terminal event detection on
+ * k_p(τ) = stopKpFraction · k_p,0, located by bisection on the Hermite dense
+ * output. The right-hand side is injected, so every kinetic model shares it.
  */
 
-import type { CollisionGeometry, KernelType } from './collision';
-import { KERNEL_IDS, collisionComponents } from './collision';
-import { peakMomentumFromF } from './descriptors';
+import { PEAK_DEPTH, peakMomentumFromF } from './descriptors';
+import type { RhsDiagnostics, RhsFunction } from './rhs';
+
+export type Termination = 'target' | 'tauMax' | 'steps' | 'pole' | 'nonfinite';
 
 // --- Dormand–Prince 5(4) tableau -------------------------------------------
 const C2 = 1 / 5, C3 = 3 / 10, C4 = 4 / 5, C5 = 8 / 9;
@@ -40,11 +34,14 @@ export interface Snapshot {
 }
 
 export interface IntegrationResult {
-  reachedHalf: boolean;
-  tauHalf: number | null;
-  dtHalf_s: number | null;
+  termination: Termination;
+  terminationMessage: string | null;
+  reachedTarget: boolean;
+  tauTarget: number | null;
+  dtTarget_s: number | null;
   snapshots: Snapshot[];
-  kpTrack: { tau: number[]; t_s: number[]; kp: number[] };
+  /** per accepted step; `loop` is the collision-weighted loop dressing, `pole` the pole indicator */
+  kpTrack: { tau: number[]; t_s: number[]; kp: number[]; loop: number[]; pole: number[] };
   /** k_p at the requested `tauEval` times, from the dense output */
   evalTrack: { tau: number[]; t_s: number[]; kp: number[] };
   nSteps: number;
@@ -53,14 +50,16 @@ export interface IntegrationResult {
   wallTime_ms: number;
   maxDN: number;
   maxDE: number;
-  /** raw occupation at the end of this segment — hand back in to extend the run */
+  /** raw occupation at the end of this segment; hand it back in to extend the run */
   finalF: Float64Array;
   finalTau: number;
 }
 
 export interface IntegrationConfig {
-  kernel: KernelType;
-  geom: CollisionGeometry;
+  rhs: RhsFunction;
+  /** state grid p and its trapezoid weights */
+  grid: Float64Array;
+  gridWeights: Float64Array;
   /** physical time unit t₀ [s] */
   t0_s: number;
   /** healing length ξ [μm] */
@@ -82,7 +81,7 @@ export interface IntegrationConfig {
   maxSteps?: number;
   /**
    * When false, integration runs for the full `tauMax` without checking for
-   * the kp0/2 crossing or the 0.90/0.75/0.50 stage markers — used to extend an
+   * the kp0/2 crossing or the 0.90/0.75/0.50 stage markers. Used to extend an
    * already-finished run further in time ("Continue simulating").
    */
   haltOnHalf?: boolean;
@@ -90,11 +89,15 @@ export interface IntegrationConfig {
    * Dimensionless times at which to report k_p from the dense output. Use this
    * to compare against another integrator's trajectory: k_p(τ) hops by a grid
    * cell whenever the spectral argmax moves, so interpolating a step-resolution
-   * track across such a hop is meaningless — the state must be evaluated at the
+   * track across such a hop is meaningless: the state must be evaluated at the
    * requested τ itself.
    */
   tauEval?: ArrayLike<number>;
-  onProgress?: (info: { pct: number; tau: number; kp: number; nSteps: number }) => void;
+  onProgress?: (info: { pct: number; tau: number; kp: number; nSteps: number; nRhs: number; diag: RhsDiagnostics }) => void;
+  /** peak-estimator depth (see PEAK_DEPTH); 0 is the three-point parabola */
+  peakDepth?: number;
+  /** minimum wall time between progress callbacks (ms) */
+  progressInterval_ms?: number;
 }
 
 const STAGE_FRACTIONS: Array<[number, string]> = [
@@ -122,8 +125,7 @@ function energyMoment(p: Float64Array, w: Float64Array, f: Float64Array): number
 
 /**
  * Build f(p) from a normalized q(k), then rescale so the discrete density
- * moment reproduces `density_um3` exactly — the same two-step construction the
- * Python fixture generator performs.
+ * moment reproduces `density_um3` exactly.
  */
 export function buildInitialF(
   q: Float64Array,
@@ -151,19 +153,16 @@ export function buildInitialF(
   return f;
 }
 
-export function runWKE(config: IntegrationConfig): IntegrationResult {
+export async function runWKE(config: IntegrationConfig): Promise<IntegrationResult> {
   const wall0 = performance.now();
   const {
-    kernel, geom, t0_s, xi_um, kp0_um_inv, f0, tauMax,
+    rhs: rhsFn, grid: p, gridWeights: wq, t0_s, xi_um, kp0_um_inv, f0, tauMax,
     rtol = 1e-7, atol = 1e-10, nSnapshots = 40, snapshotIntervalTau,
-    maxSteps = 200000, tauEval, onProgress,
-    haltOnHalf = true, stopKpFraction = 0.5,
+    maxSteps = 200000, tauEval, onProgress, progressInterval_ms = 150,
+    haltOnHalf = true, stopKpFraction = 0.5, peakDepth = PEAK_DEPTH,
   } = config;
 
-  const kernelId = KERNEL_IDS[kernel];
   const n = f0.length;
-  const p = geom.grid;
-  const wq = geom.weights;
 
   const k_um_inv = new Float64Array(n);
   for (let i = 0; i < n; i++) k_um_inv[i] = p[i] / xi_um;
@@ -180,14 +179,10 @@ export function runWKE(config: IntegrationConfig): IntegrationResult {
   }
   dens0 /= twoPi2;
 
-  const gain = new Float64Array(n);
-  const loss = new Float64Array(n);
   let nRhs = 0;
-  const rhs = (f: Float64Array, out: Float64Array): Float64Array => {
-    collisionComponents(f, geom, kernelId, gain, loss);
-    for (let i = 0; i < n; i++) out[i] = gain[i] - loss[i];
+  const rhs = (f: Float64Array, out: Float64Array): RhsDiagnostics | Promise<RhsDiagnostics> => {
     nRhs++;
-    return out;
+    return rhsFn(f, out);
   };
 
   const alloc = () => new Float64Array(n);
@@ -201,10 +196,12 @@ export function runWKE(config: IntegrationConfig): IntegrationResult {
   }
   const halfTarget = kp0_um_inv * stopKpFraction;
 
-  const kpOf = (f: Float64Array) => peakMomentumFromF(k_um_inv, f);
+  const kpOf = (f: Float64Array) => peakMomentumFromF(k_um_inv, f, peakDepth);
 
   const snapshots: Snapshot[] = [];
-  const kpTrack = { tau: [] as number[], t_s: [] as number[], kp: [] as number[] };
+  const kpTrack = {
+    tau: [] as number[], t_s: [] as number[], kp: [] as number[], loop: [] as number[], pole: [] as number[],
+  };
   const evalTrack = { tau: [] as number[], t_s: [] as number[], kp: [] as number[] };
   let evalIdx = 0;
   let maxDN = 0;
@@ -223,19 +220,43 @@ export function runWKE(config: IntegrationConfig): IntegrationResult {
   };
 
   snapshots.push(makeSnapshot(0, y, 'initial'));
-  kpTrack.tau.push(0); kpTrack.t_s.push(0); kpTrack.kp.push(kp0_um_inv);
 
-  const stageFractions = [...STAGE_FRACTIONS];
-  if (!stageFractions.some(([frac]) => Math.abs(frac - stopKpFraction) < 1e-12)) {
-    stageFractions.push([stopKpFraction, stopKpFraction.toFixed(3)]);
+  const timelineTargets: Array<{ target: number; label: string; done: boolean }> = [];
+  if (haltOnHalf && nSnapshots > 2) {
+    for (let i = 1; i < nSnapshots - 2; i++) {
+      timelineTargets.push({
+        target: kp0_um_inv * (1 - (1 - stopKpFraction) * i / (nSnapshots - 1)),
+        label: 'sample', done: false,
+      });
+    }
+    for (const [fraction, label] of STAGE_FRACTIONS) {
+      if (Math.abs(fraction - stopKpFraction) < 1e-12) {
+        timelineTargets.push({ target: stopKpFraction * kp0_um_inv, label, done: false });
+        continue;
+      }
+      if (fraction < stopKpFraction) continue;
+      const nearest = timelineTargets.reduce((best, item, index) =>
+        Math.abs(item.target - fraction * kp0_um_inv) < Math.abs(timelineTargets[best].target - fraction * kp0_um_inv) ? index : best, 0);
+      timelineTargets[nearest] = { target: fraction * kp0_um_inv, label, done: false };
+    }
+    if (!STAGE_FRACTIONS.some(([fraction]) => Math.abs(fraction - stopKpFraction) < 1e-12)) {
+      timelineTargets.push({ target: stopKpFraction * kp0_um_inv, label: stopKpFraction.toFixed(3), done: false });
+    }
+    timelineTargets.sort((a, b) => b.target - a.target);
   }
-  const pendingStages = stageFractions.map(([frac, label]) => ({
-    target: frac * kp0_um_inv, label, done: false,
-  }));
 
   // Initial step size: a small fraction of the expected timescale.
-  rhs(y, k1);
-  let h = tauMax / 2000;
+  let diag = await rhs(y, k1);
+  kpTrack.tau.push(0); kpTrack.t_s.push(0); kpTrack.kp.push(kpOf(y));
+  kpTrack.loop.push(diag.loopDressing); kpTrack.pole.push(diag.poleIndicator);
+  let termination: Termination | null = null;
+  let terminationMessage: string | null = null;
+  if (diag.stop) {
+    termination = 'pole';
+    terminationMessage = diag.stop;
+  }
+  const hInit = Number.isFinite(tauMax) ? tauMax / 2000 : 1;
+  let h = hInit;
   {
     let scale = 0;
     for (let i = 0; i < n; i++) {
@@ -244,38 +265,45 @@ export function runWKE(config: IntegrationConfig): IntegrationResult {
     }
     if (scale > 0) h = Math.min(h, 0.01 / scale);
   }
-  const hMax = tauMax / 20;
+  const hMax = Number.isFinite(tauMax) ? tauMax / 20 : Infinity;
+  let lastProgress = performance.now();
 
   let nSteps = 0;
   let nRejected = 0;
+  let consecutiveRejects = 0;
   let reachedHalf = false;
   let tauHalf: number | null = null;
   let halfStateF: Float64Array | null = null;
-  let kpPrev = kp0_um_inv;
+  let kpPrev = kpOf(y);
 
-  // Timeline states are sampled uniformly in simulated time, independently of
-  // the adaptive solver steps. This keeps playback faithful to elapsed time.
+  // Relaxation runs sample evenly across the peak's drop to the stop target.
+  // Continuations retain uniform-in-time sampling from their saved interval.
   const sampleInterval = snapshotIntervalTau ?? tauMax / nSnapshots;
   let nextSampleTau = Number.isFinite(sampleInterval) && sampleInterval > 0
     ? sampleInterval
     : Infinity;
 
-  while (tau < tauMax && nSteps < maxSteps && !(haltOnHalf && reachedHalf)) {
+  while (termination === null && tau < tauMax && nSteps < maxSteps && !(haltOnHalf && reachedHalf)) {
     if (tau + h > tauMax) h = tauMax - tau;
+    if (consecutiveRejects > 60 || !(h > 0)) {
+      termination = 'nonfinite';
+      terminationMessage = 'Step size collapsed; the kinetic equation became too stiff to continue.';
+      break;
+    }
 
     // --- one DOPRI5 stage sweep ---
     for (let i = 0; i < n; i++) yTmp[i] = y[i] + h * A21 * k1[i];
-    rhs(yTmp, k2);
+    await rhs(yTmp, k2);
     for (let i = 0; i < n; i++) yTmp[i] = y[i] + h * (A31 * k1[i] + A32 * k2[i]);
-    rhs(yTmp, k3);
+    await rhs(yTmp, k3);
     for (let i = 0; i < n; i++) yTmp[i] = y[i] + h * (A41 * k1[i] + A42 * k2[i] + A43 * k3[i]);
-    rhs(yTmp, k4);
+    await rhs(yTmp, k4);
     for (let i = 0; i < n; i++) yTmp[i] = y[i] + h * (A51 * k1[i] + A52 * k2[i] + A53 * k3[i] + A54 * k4[i]);
-    rhs(yTmp, k5);
+    await rhs(yTmp, k5);
     for (let i = 0; i < n; i++) yTmp[i] = y[i] + h * (A61 * k1[i] + A62 * k2[i] + A63 * k3[i] + A64 * k4[i] + A65 * k5[i]);
-    rhs(yTmp, k6);
+    await rhs(yTmp, k6);
     for (let i = 0; i < n; i++) yTmp[i] = y[i] + h * (B1 * k1[i] + B3 * k3[i] + B4 * k4[i] + B5 * k5[i] + B6 * k6[i]);
-    rhs(yTmp, k7);
+    const diagNew = await rhs(yTmp, k7);
 
     // error estimate
     let err = 0;
@@ -287,11 +315,19 @@ export function runWKE(config: IntegrationConfig): IntegrationResult {
     }
     err = Math.sqrt(err / n);
 
-    if (err > 1 && h > 1e-14) {
+    if (!Number.isFinite(err)) {
       nRejected++;
+      consecutiveRejects++;
+      h *= 0.2;
+      continue;
+    }
+    if (err > 1) {
+      nRejected++;
+      consecutiveRejects++;
       h *= Math.max(0.2, 0.9 * Math.pow(err, -0.2));
       continue;
     }
+    consecutiveRejects = 0;
 
     const tauNew = tau + h;
     const kpNew = kpOf(yTmp);
@@ -299,7 +335,7 @@ export function runWKE(config: IntegrationConfig): IntegrationResult {
     // --- terminal event: kp crosses kp0/2 downwards ---
     if (haltOnHalf && kpPrev > halfTarget && kpNew <= halfTarget) {
       tauHalf = bisectEvent(y, yTmp, k1, k7, tau, h, kpOf, halfTarget, n);
-      // y/yTmp/k1/k7 describe *this* step only — the exact state must be taken
+      // y/yTmp/k1/k7 describe *this* step only; the exact state must be taken
       // here, before the loop advances past it below.
       halfStateF = hermite(y, yTmp, k1, k7, tau, h, tauHalf, n);
       reachedHalf = true;
@@ -307,12 +343,12 @@ export function runWKE(config: IntegrationConfig): IntegrationResult {
 
     // --- stage crossings, located the same way ---
     if (haltOnHalf) {
-      for (const st of pendingStages) {
-        if (!st.done && kpPrev > st.target && kpNew <= st.target) {
-          const tc = bisectEvent(y, yTmp, k1, k7, tau, h, kpOf, st.target, n);
+      for (const sample of timelineTargets) {
+        if (!sample.done && kpPrev > sample.target && kpNew <= sample.target) {
+          const tc = bisectEvent(y, yTmp, k1, k7, tau, h, kpOf, sample.target, n);
           const fc = hermite(y, yTmp, k1, k7, tau, h, tc, n);
-          snapshots.push(makeSnapshot(tc, fc, st.label));
-          st.done = true;
+          snapshots.push(makeSnapshot(tc, fc, sample.label));
+          sample.done = true;
         }
       }
     }
@@ -335,10 +371,12 @@ export function runWKE(config: IntegrationConfig): IntegrationResult {
     // If this step contains the terminal half-time event, do not save states
     // beyond that event: the final snapshot below is the exact half-time state.
     const sampleEnd = reachedHalf && tauHalf !== null ? tauHalf : tauNew;
-    while (nextSampleTau <= sampleEnd + 1e-15) {
-      const fs = hermite(y, yTmp, k1, k7, tau, h, nextSampleTau, n);
-      snapshots.push(makeSnapshot(nextSampleTau, fs, 'sample'));
-      nextSampleTau += sampleInterval;
+    if (!haltOnHalf) {
+      while (nextSampleTau <= sampleEnd + 1e-15) {
+        const fs = hermite(y, yTmp, k1, k7, tau, h, nextSampleTau, n);
+        snapshots.push(makeSnapshot(nextSampleTau, fs, 'sample'));
+        nextSampleTau += sampleInterval;
+      }
     }
 
     tau = tauNew;
@@ -346,14 +384,28 @@ export function runWKE(config: IntegrationConfig): IntegrationResult {
     k1.set(k7); // FSAL
     kpPrev = kpNew;
     nSteps++;
+    diag = diagNew;
 
     kpTrack.tau.push(tau);
     kpTrack.t_s.push(tau * t0_s);
     kpTrack.kp.push(kpNew);
+    kpTrack.loop.push(diag.loopDressing);
+    kpTrack.pole.push(diag.poleIndicator);
 
-    if (onProgress && nSteps % 20 === 0) {
-      const pct = Math.min(1, (kp0_um_inv - kpNew) / (kp0_um_inv - halfTarget));
-      onProgress({ pct, tau, kp: kpNew, nSteps });
+    if (diag.stop && !reachedHalf) {
+      termination = 'pole';
+      terminationMessage = diag.stop;
+    }
+
+    if (onProgress) {
+      const now = performance.now();
+      if (now - lastProgress >= progressInterval_ms) {
+        lastProgress = now;
+        const pct = haltOnHalf
+          ? Math.min(1, Math.max(0, (kp0_um_inv - kpNew) / (kp0_um_inv - halfTarget)))
+          : Math.min(1, nSteps / maxSteps);
+        onProgress({ pct, tau, kp: kpNew, nSteps, nRhs, diag });
+      }
     }
 
     if (!reachedHalf) {
@@ -374,10 +426,18 @@ export function runWKE(config: IntegrationConfig): IntegrationResult {
   // Snapshots may be produced slightly out of order across stage/sample paths.
   snapshots.sort((a, b) => a.tau - b.tau);
 
+  if (termination === null) {
+    if (haltOnHalf && reachedHalf) termination = 'target';
+    else if (nSteps >= maxSteps) termination = 'steps';
+    else termination = 'tauMax';
+  }
+
   return {
-    reachedHalf,
-    tauHalf,
-    dtHalf_s: tauHalf !== null ? tauHalf * t0_s : null,
+    termination,
+    terminationMessage,
+    reachedTarget: reachedHalf,
+    tauTarget: tauHalf,
+    dtTarget_s: tauHalf !== null ? tauHalf * t0_s : null,
     snapshots,
     kpTrack,
     evalTrack,
@@ -414,8 +474,7 @@ function hermite(
 
 /**
  * Locate the time at which kp(t) = target inside an accepted step, by
- * bisection on the Hermite interpolant (analogue of scipy's brentq on the
- * dense output).
+ * bisection on the Hermite dense output.
  */
 function bisectEvent(
   y0: Float64Array, y1: Float64Array,

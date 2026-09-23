@@ -5,7 +5,6 @@
  *
  *     q(k) = N_k / N,     ∫ q(k) dk = 1,     N_k = 4π k² n_k,
  *
- * which is the same quantity the Python reference implementation calls `q_arr`.
  * The Bose occupation on the same grid is f(k) = 2π² n q(k) / k².
  */
 
@@ -13,15 +12,13 @@ import { trapz, logarithmicGrid } from './grid';
 import {
   P_MIN, P_MAX, N_GRID, REFERENCE_XI_UM,
 } from './constants';
-import { shapeFactor, referencePrefactor, checkDomain } from './calibration';
-import type { DomainStatus } from './calibration';
 
 /**
- * Canonical descriptor grid: the solver grid at the reference conditions,
- * expressed in physical k. Resampling every input onto this grid makes browser
- * descriptors reproduce the Python fixture values bit-for-bit.
+ * Canonical input grid: every imported or drawn spectrum is resampled onto it
+ * before the solver resamples it again onto its own accuracy-dependent grid.
+ * It equals the Standard solver grid at the reference healing length.
  */
-export const DESCRIPTOR_GRID: Float64Array = (() => {
+export const INPUT_GRID: Float64Array = (() => {
   const p = logarithmicGrid(P_MIN, P_MAX, N_GRID);
   const k = new Float64Array(p.length);
   for (let i = 0; i < p.length; i++) k[i] = p[i] / REFERENCE_XI_UM;
@@ -29,10 +26,16 @@ export const DESCRIPTOR_GRID: Float64Array = (() => {
 })();
 
 /**
- * Peak of a spectral density by a three-point parabolic fit in (ln k, ln s).
- * Port of `wke.observables.peak_momentum`, which fits `spectral = k² f`.
+ * Depth, in ln s below the maximum, of the peak region the estimator fits.
+ * A least-squares parabola over the top 2% of the peak averages out grid-level
+ * wiggles of a broad, flat peak, which move a three-point fit by up to a few
+ * 1e-3 and make stop times jitter with the grid instead of converging.
+ * Depth 0 selects the three-point parabola through the grid maximum.
  */
-function peakOfSpectral(k: Float64Array, spectral: Float64Array): number {
+export const PEAK_DEPTH = 0.02;
+
+/** Peak of a spectral density by a parabolic fit in (ln k, ln s) around the maximum. */
+function peakOfSpectral(k: Float64Array, spectral: Float64Array, peakDepth: number): number {
   const n = k.length;
   let iMax = 0;
   let sMax = -Infinity;
@@ -41,6 +44,31 @@ function peakOfSpectral(k: Float64Array, spectral: Float64Array): number {
   }
   if (iMax === 0 || iMax === n - 1) return k[iMax];
   if (spectral[iMax - 1] <= 0 || spectral[iMax] <= 0 || spectral[iMax + 1] <= 0) return k[iMax];
+
+  if (peakDepth > 0) {
+    // Least-squares parabola over the contiguous top of the peak.
+    const floor = Math.log(sMax) - peakDepth;
+    let lo = iMax - 1, hi = iMax + 1;
+    while (lo > 0 && spectral[lo - 1] > 0 && Math.log(spectral[lo - 1]) >= floor) lo--;
+    while (hi < n - 1 && spectral[hi + 1] > 0 && Math.log(spectral[hi + 1]) >= floor) hi++;
+    const xc = Math.log(k[iMax]);
+    let S0 = 0, S1 = 0, S2 = 0, S3 = 0, S4 = 0, T0 = 0, T1 = 0, T2 = 0;
+    for (let i = lo; i <= hi; i++) {
+      const x = Math.log(k[i]) - xc, y = Math.log(spectral[i]);
+      const x2 = x * x;
+      S0 += 1; S1 += x; S2 += x2; S3 += x2 * x; S4 += x2 * x2;
+      T0 += y; T1 += x * y; T2 += x2 * y;
+    }
+    // Solve [[S4 S3 S2][S3 S2 S1][S2 S1 S0]] [A B C] = [T2 T1 T0]
+    const det3 = (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) =>
+      a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g);
+    const D = det3(S4, S3, S2, S3, S2, S1, S2, S1, S0);
+    const A = det3(T2, S3, S2, T1, S2, S1, T0, S1, S0) / D;
+    const B = det3(S4, T2, S2, S3, T1, S1, S2, T0, S0) / D;
+    if (!(A < 0)) return k[iMax];
+    const xl = Math.log(k[lo]) - xc, xh = Math.log(k[hi]) - xc;
+    return Math.exp(xc + Math.max(xl, Math.min(xh, -B / (2 * A))));
+  }
 
   const x0 = Math.log(k[iMax - 1]), x1 = Math.log(k[iMax]), x2 = Math.log(k[iMax + 1]);
   const y0 = Math.log(spectral[iMax - 1]), y1 = Math.log(spectral[iMax]), y2 = Math.log(spectral[iMax + 1]);
@@ -55,16 +83,16 @@ function peakOfSpectral(k: Float64Array, spectral: Float64Array): number {
   return Math.exp(Math.max(x0, Math.min(x2, -b / (2 * a))));
 }
 
-/** Peak wavevector from a shell density q(k) — q is itself the spectral density. */
-export function peakMomentum(k: Float64Array, q: Float64Array): number {
-  return peakOfSpectral(k, q);
+/** Peak wavevector from a shell density q(k); q is itself the spectral density. */
+export function peakMomentum(k: Float64Array, q: Float64Array, depth = PEAK_DEPTH): number {
+  return peakOfSpectral(k, q, depth);
 }
 
 /** Peak wavevector from an occupation f(k); the spectral density is k² f. */
-export function peakMomentumFromF(k: Float64Array, f: Float64Array): number {
+export function peakMomentumFromF(k: Float64Array, f: Float64Array, depth = PEAK_DEPTH): number {
   const spec = new Float64Array(k.length);
   for (let i = 0; i < k.length; i++) spec[i] = k[i] * k[i] * f[i];
-  return peakOfSpectral(k, spec);
+  return peakOfSpectral(k, spec, depth);
 }
 
 /** Spectral centroid ⟨k⟩ = ∫ k q(k) dk. */
@@ -114,7 +142,7 @@ export function computeFWHM(k: Float64Array, q: Float64Array): FWHMResult {
 }
 
 /**
- * Count distinct, prominent interior maxima — a unimodality proxy.
+ * Count distinct, prominent interior maxima, a unimodality proxy.
  *
  * A one-grid-point wiggle should not turn a visually unimodal imported curve
  * into a bimodal one. A candidate must be above 10% of the global peak and
@@ -178,56 +206,25 @@ export interface SpectralDescriptors {
   fwhm_um_inv: number;
   kLeft_um_inv: number;
   kRight_um_inv: number;
-  /** δ_k = (⟨k⟩ − k_p,0) / k_p,0 */
-  delta_k: number;
-  /** w = FWHM / k_p,0 */
-  w: number;
-  c_shape: number;
-  /** A_ref = κ k_p,0² [s·μm⁻⁴] */
-  A_ref_s_um4: number;
-  /** A_pred = A_ref · C_shape [s·μm⁻⁴] */
-  A_pred_s_um4: number;
   /** ∫ q dk of the supplied profile, before renormalization */
   normIntegral: number;
   modeCount: number;
-  domainStatus: DomainStatus;
-  domainWarnings: string[];
 }
 
-/** All descriptors of a normalized q(k) profile. */
+/** Shape descriptors of a normalized q(k) profile. */
 export function computeDescriptors(
   k_um_inv: Float64Array,
   q: Float64Array,
+  peakDepth = PEAK_DEPTH,
 ): SpectralDescriptors {
-  const normIntegral = trapz(q, k_um_inv);
-  const kp = peakMomentum(k_um_inv, q);
-  const mean_k = spectralCentroid(k_um_inv, q);
   const { fwhm, kLeft, kRight } = computeFWHM(k_um_inv, q);
-  const delta_k = (mean_k - kp) / kp;
-  const w = fwhm / kp;
-  const c_shape = shapeFactor(delta_k, w);
-  const A_ref = referencePrefactor(kp);
-  const modeCount = countModes(q);
-
-  const { status, warnings } = checkDomain(kp, delta_k, w);
-  if (modeCount > 1) {
-    warnings.push(`${modeCount} prominent local maxima above 10% of the peak; profile is not unimodal`);
-  }
-
   return {
-    kp0_um_inv: kp,
-    mean_k_um_inv: mean_k,
+    kp0_um_inv: peakMomentum(k_um_inv, q, peakDepth),
+    mean_k_um_inv: spectralCentroid(k_um_inv, q),
     fwhm_um_inv: fwhm,
     kLeft_um_inv: kLeft,
     kRight_um_inv: kRight,
-    delta_k,
-    w,
-    c_shape,
-    A_ref_s_um4: A_ref,
-    A_pred_s_um4: A_ref * c_shape,
-    normIntegral,
-    modeCount,
-    domainStatus: warnings.length === 0 ? status : 'extrapolated',
-    domainWarnings: warnings,
+    normIntegral: trapz(q, k_um_inv),
+    modeCount: countModes(q),
   };
 }

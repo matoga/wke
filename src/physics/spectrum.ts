@@ -12,7 +12,7 @@
  */
 
 import { interpolateQ, normalizeQ, trapz } from './grid';
-import { DESCRIPTOR_GRID } from './descriptors';
+import { INPUT_GRID } from './descriptors';
 
 export type SpectrumConvention = 'n_k' | 'Nk_over_N';
 
@@ -161,7 +161,7 @@ export function prepareSpectrum(raw: RawSpectrum): PreparedSpectrum {
   }
   const qRaw = shellRaw.map((v) => v / rawIntegral);
 
-  const kGrid = DESCRIPTOR_GRID;
+  const kGrid = INPUT_GRID;
   // Below the first measurement, retain the first finite n(k), not the first
   // shell value. For an n(k) import this happens naturally before conversion;
   // for an N_k/N import we reconstruct the equivalent k² shell scaling.

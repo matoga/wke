@@ -1,7 +1,7 @@
 /**
  * Export conversions: any saved profile (the imported spectrum, or a WKE
  * snapshot) rendered as a two-column table in the convention and k unit the
- * user picks. Kept separate from `ui/norm.ts`, which is the *display* toggle —
+ * user picks. Kept separate from `ui/norm.ts`, which is the *display* toggle:
  * export needs a strict superset (radial n_k, and a k-unit choice) that would
  * be overkill for every plot in the app.
  */
@@ -10,9 +10,9 @@ export type ExportConvention = 'Nk_over_N' | 'Nk' | 'nk';
 export type ExportKUnit = 'um_inv' | 'm_inv';
 
 export const EXPORT_CONVENTIONS: Array<{ id: ExportConvention; label: string; column: string }> = [
-  { id: 'Nk_over_N', label: 'N_k / N (unit norm, ∫dk = 1)', column: 'Nk_over_N' },
-  { id: 'Nk', label: 'N_k (experimental scale)', column: 'Nk' },
-  { id: 'nk', label: 'n_k = N_k / (4πk²)  (radial density)', column: 'n_k' },
+  { id: 'Nk_over_N', label: 'Nₖ/N, unit norm', column: 'Nk_over_N' },
+  { id: 'Nk', label: 'Nₖ, atom-number scale', column: 'Nk' },
+  { id: 'nk', label: 'nₖ = Nₖ/(4πk²), radial density', column: 'n_k' },
 ];
 
 export const EXPORT_K_UNITS: Array<{ id: ExportKUnit; label: string }> = [

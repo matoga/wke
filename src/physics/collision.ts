@@ -1,30 +1,55 @@
 /**
  * Reduced isotropic four-wave collision operator.
  *
- * Direct TypeScript port of `wke/geometry.py` + `wke/collision.py`.
- * The kinematics are precomputed once into flat typed arrays (event table),
- * then every right-hand-side evaluation is a single linear sweep over events.
+ * The angular integrals of the momentum delta are done analytically, which
+ * leaves, for every target p on the state grid, a double integral over the two
+ * partner magnitudes p1, p2 on log Gauss-Legendre nodes:
  *
- * Event kinematics (Appendix-A reduced form):
- *   p3² = p1² + p2² − p²          (energy conservation, ε ∝ p²)
- *   weight = (4π/ncal²) · w1 · w2 · p1 · p2 · K(p, p1, p2, p3)
- *   K(p, p1, p2, p3) = min(p, p1, p2, p3) / p     (bare isotropic kernel)
+ *   p3² = p1² + p2² − p²              (reaction p + p3 ↔ p1 + p2)
+ *   event weight = w1 · w2 · p1 · p2 · min(p, p1, p2, p3) / p
+ *   ∂τ f(p) = (4π / N_cal²) Σ_events weight · M_e · [gain − loss]
  *
- * Gain/loss factors (`wke/kernel.py::gain_loss`):
+ * M_e = 1 for the bare kinetic equation; the renormalised models multiply each
+ * event by a loop-dressed factor (see rhs.ts). The event weights here do not
+ * depend on the coupling, so one table serves every density and scattering
+ * length on the same grid.
+ *
+ * Events are stored contiguously per target, and within a target per p1 node
+ * ("pair"): all events of a pair share p and p1, hence the t-channel energy
+ * transfer |p² − p1²|.
+ *
+ * Gain/loss factors:
  *   quantum      g = f1 f2 (1 + f + f3),   l = f f3 (1 + f1 + f2)
  *   classical    g = f1 f2 (f + f3),       l = f f3 (f1 + f2)
- *   spontaneous  g = f1 f2,                l = f f3
  */
 
 import { gaussLegendreLog, interpolationMap } from './quadrature';
 
-export type KernelType = 'classical' | 'quantum' | 'spontaneous';
+export type KernelType = 'classical' | 'quantum';
 
 export const KERNEL_IDS: Record<KernelType, number> = {
   quantum: 0,
   classical: 1,
-  spontaneous: 2,
 };
+
+export interface QuadratureOptions {
+  /** Gauss nodes per panel below the target p */
+  nqLow: number;
+  /** Gauss nodes per panel above the target p */
+  nqHigh: number;
+  /** equal-width panels (in ln p) per segment */
+  panels: number;
+}
+
+/**
+ * Subset of targets owned by one compute thread: target i is built when
+ * i % stride === offset. The partial right-hand sides of all subsets add up to
+ * the full one.
+ */
+export interface TargetPartition {
+  stride: number;
+  offset: number;
+}
 
 /** Precomputed collision kinematics for one state grid. */
 export interface CollisionGeometry {
@@ -33,9 +58,7 @@ export interface CollisionGeometry {
   /** trapezoid weights Δp on the state grid (diagnostics only) */
   weights: Float64Array;
   p_coll_max: number;
-  ncal: number;
-  nq_low: number;
-  nq_high: number;
+  quad: QuadratureOptions;
   /** offsets[i] .. offsets[i+1] is the event range whose target is grid[i] */
   offsets: Int32Array;
   weight: Float64Array;
@@ -45,11 +68,25 @@ export interface CollisionGeometry {
   a2: Float64Array;
   i3: Int32Array;
   a3: Float64Array;
+  /** second partner magnitude per event (the first is shared by the pair) */
+  p2: Float64Array;
+  /** pairOffsets[k] .. pairOffsets[k+1] are the events of pair k */
+  pairOffsets: Int32Array;
+  /** targetPairs[i] .. targetPairs[i+1] are the pairs whose target is grid[i] */
+  targetPairs: Int32Array;
+  pairTarget: Int32Array;
+  pairP1: Float64Array;
+  nPairs: number;
   nEvents: number;
   buildTime_ms: number;
 }
 
-/** Trapezoid weights matching `wke.physics.trapezoid_weights`. */
+/** Tree-level prefactor 4π / N_cal² that multiplies every event weight. */
+export function treePrefactor(ncal: number): number {
+  return (4.0 * Math.PI) / (ncal * ncal);
+}
+
+/** Trapezoid weights on a grid. */
 export function trapezoidWeights(x: Float64Array): Float64Array {
   const n = x.length;
   const w = new Float64Array(n);
@@ -61,99 +98,75 @@ export function trapezoidWeights(x: Float64Array): Float64Array {
 
 type Segment = [number, number, number]; // [a, b, nq]
 
-/** Port of `_axis_segments`. */
-function axisSegments(
-  p: number,
-  pMin: number,
-  pCollMax: number,
-  nqLow: number,
-  nqHigh: number,
-): Segment[] {
-  if (p >= pCollMax) return [[pMin, pCollMax, nqLow]];
+/** Split [a, b] into equal panels in ln p, each carrying nq nodes. */
+function panelize(a: number, b: number, nq: number, panels: number, out: Segment[]): void {
+  if (panels <= 1) { out.push([a, b, nq]); return; }
+  const la = Math.log(a);
+  const step = (Math.log(b) - la) / panels;
+  let lo = a;
+  for (let k = 1; k <= panels; k++) {
+    const hi = k === panels ? b : Math.exp(la + k * step);
+    out.push([lo, hi, nq]);
+    lo = hi;
+  }
+}
+
+function axisSegments(p: number, pMin: number, pCollMax: number, q: QuadratureOptions): Segment[] {
   const segments: Segment[] = [];
-  if (p > pMin * (1.0 + 1e-14)) segments.push([pMin, p, nqLow]);
-  if (pCollMax > p * (1.0 + 1e-14)) segments.push([Math.max(p, pMin), pCollMax, nqHigh]);
+  if (p >= pCollMax) {
+    panelize(pMin, pCollMax, q.nqLow, q.panels, segments);
+    return segments;
+  }
+  if (p > pMin * (1.0 + 1e-14)) panelize(pMin, p, q.nqLow, q.panels, segments);
+  if (pCollMax > p * (1.0 + 1e-14)) panelize(Math.max(p, pMin), pCollMax, q.nqHigh, q.panels, segments);
   return segments;
 }
 
-/** Port of `_p2_segments`. */
-function p2Segments(
-  p: number,
-  p1: number,
-  pMin: number,
-  pCollMax: number,
-  nqLow: number,
-  nqHigh: number,
-): Segment[] {
+function p2Segments(p: number, p1: number, pMin: number, pCollMax: number, q: QuadratureOptions): Segment[] {
   const lower = Math.max(pMin, Math.sqrt(Math.max(p * p - p1 * p1, 0.0)));
   if (lower >= pCollMax * (1.0 - 1e-15)) return [];
   const segments: Segment[] = [];
   const split = Math.min(p, pCollMax);
-  if (lower < split * (1.0 - 1e-14)) segments.push([lower, split, nqLow]);
+  if (lower < split * (1.0 - 1e-14)) panelize(lower, split, q.nqLow, q.panels, segments);
   const upperLow = Math.max(lower, p);
-  if (upperLow < pCollMax * (1.0 - 1e-14)) segments.push([upperLow, pCollMax, nqHigh]);
+  if (upperLow < pCollMax * (1.0 - 1e-14)) panelize(upperLow, pCollMax, q.nqHigh, q.panels, segments);
   return segments;
 }
 
-/** Growable flat buffer of collision events. */
-class EventBuffer {
-  weight: Float64Array;
-  i1: Int32Array;
-  a1: Float64Array;
-  i2: Int32Array;
-  a2: Float64Array;
-  i3: Int32Array;
-  a3: Float64Array;
-  n = 0;
-
-  constructor(capacity: number) {
-    this.weight = new Float64Array(capacity);
-    this.i1 = new Int32Array(capacity);
-    this.a1 = new Float64Array(capacity);
-    this.i2 = new Int32Array(capacity);
-    this.a2 = new Float64Array(capacity);
-    this.i3 = new Int32Array(capacity);
-    this.a3 = new Float64Array(capacity);
+class F64 {
+  a: Float64Array;
+  constructor(cap: number) { this.a = new Float64Array(cap); }
+  ensure(n: number): void {
+    if (n <= this.a.length) return;
+    const d = new Float64Array(Math.max(n, this.a.length * 2));
+    d.set(this.a);
+    this.a = d;
   }
+}
 
-  private grow(): void {
-    const cap = this.weight.length * 2;
-    const gf = (src: Float64Array) => { const d = new Float64Array(cap); d.set(src); return d; };
-    const gi = (src: Int32Array) => { const d = new Int32Array(cap); d.set(src); return d; };
-    this.weight = gf(this.weight);
-    this.a1 = gf(this.a1); this.a2 = gf(this.a2); this.a3 = gf(this.a3);
-    this.i1 = gi(this.i1); this.i2 = gi(this.i2); this.i3 = gi(this.i3);
-  }
-
-  push(
-    weight: number,
-    i1: number, a1: number,
-    i2: number, a2: number,
-    i3: number, a3: number,
-  ): void {
-    if (this.n === this.weight.length) this.grow();
-    const k = this.n++;
-    this.weight[k] = weight;
-    this.i1[k] = i1; this.a1[k] = a1;
-    this.i2[k] = i2; this.a2[k] = a2;
-    this.i3[k] = i3; this.a3[k] = a3;
+class I32 {
+  a: Int32Array;
+  constructor(cap: number) { this.a = new Int32Array(cap); }
+  ensure(n: number): void {
+    if (n <= this.a.length) return;
+    const d = new Int32Array(Math.max(n, this.a.length * 2));
+    d.set(this.a);
+    this.a = d;
   }
 }
 
 /**
- * Build the collision event table. Port of `build_geometry`.
+ * Build the collision event table.
  *
  * @param pState    log-spaced dimensionless state grid; must extend to
  *                  sqrt(2)·pCollMax so that p3 never leaves the grid.
  * @param pCollMax  collision cutoff (strictly inside the state grid)
- * @param ncal      4π² n ξ³
  */
 export function buildGeometry(
   pState: Float64Array,
   pCollMax: number,
-  ncal: number,
-  nqLow = 16,
-  nqHigh = 16,
+  quad: QuadratureOptions = { nqLow: 16, nqHigh: 16, panels: 1 },
+  partition: TargetPartition = { stride: 1, offset: 0 },
 ): CollisionGeometry {
   const t0 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
   const n = pState.length;
@@ -168,74 +181,104 @@ export function buildGeometry(
   const logState = new Float64Array(n);
   for (let i = 0; i < n; i++) logState[i] = Math.log(pState[i]);
 
-  const prefactor = (4.0 * Math.PI) / (ncal * ncal);
   const pMin = pState[0];
   const pMaxGuard = pState[n - 1] * (1.0 + 2e-12);
 
+  const perTarget = 4 * quad.panels * quad.panels * Math.max(quad.nqLow, quad.nqHigh) ** 2;
+  const cap = Math.max(1 << 16, Math.ceil((n * perTarget) / (2 * partition.stride)));
+  const weight = new F64(cap), a1 = new F64(cap), a2 = new F64(cap), a3 = new F64(cap);
+  const p2s = new F64(cap);
+  const i1 = new I32(cap), i2 = new I32(cap), i3 = new I32(cap);
+  const pairOff = new I32(n * 4 * quad.panels * quad.nqHigh + 1);
+  const pairTarget = new I32(n * 4 * quad.panels * quad.nqHigh);
+  const pairP1 = new F64(n * 4 * quad.panels * quad.nqHigh);
+
   const offsets = new Int32Array(n + 1);
-  // Rough a-priori capacity: 2 p1-segments × nq × 2 p2-segments × nq per target.
-  const buf = new EventBuffer(Math.max(1 << 16, n * 2 * nqHigh * 2 * nqHigh));
+  const targetPairs = new Int32Array(n + 1);
+  let ne = 0;
+  let np = 0;
+  pairOff.a[0] = 0;
 
   for (let ip = 0; ip < n; ip++) {
     const p = pState[ip];
-    const p2Target = p * p;
+    const pSq = p * p;
+    const owned = ip % partition.stride === partition.offset;
 
-    for (const [a, b, nqa] of axisSegments(p, pMin, pCollMax, nqLow, nqHigh)) {
+    for (const [a, b, nqa] of owned ? axisSegments(p, pMin, pCollMax, quad) : []) {
       const { p: q1, w: w1 } = gaussLegendreLog(a, b, nqa);
 
       for (let j = 0; j < q1.length; j++) {
         const p1 = q1[j];
         const w1n = w1[j];
         const m1 = interpolationMap(logState, p1);
+        const pairStart = ne;
 
-        for (const [c, d, nqb] of p2Segments(p, p1, pMin, pCollMax, nqLow, nqHigh)) {
+        for (const [c, d, nqb] of p2Segments(p, p1, pMin, pCollMax, quad)) {
           const { p: q2, w: w2 } = gaussLegendreLog(c, d, nqb);
 
           for (let m = 0; m < q2.length; m++) {
             const p2 = q2[m];
-            const p3sq = p1 * p1 + p2 * p2 - p2Target;
+            const p3sq = p1 * p1 + p2 * p2 - pSq;
             // Roundoff at a lower boundary may produce an exact zero.
             if (!(p3sq > 0.0)) continue;
             const p3 = Math.sqrt(p3sq);
             if (p3 > pMaxGuard) throw new Error('p3 exceeds state guard band');
 
-            // bare_kernel = min(p, p1, p2, p3) / p
             const kernel = Math.min(p, p1, p2, p3) / p;
-            const gw = prefactor * (w1n * w2[m]) * p1 * p2 * kernel;
-
             const m2 = interpolationMap(logState, p2);
             const m3 = interpolationMap(logState, p3);
-            buf.push(gw, m1.idx, m1.alpha, m2.idx, m2.alpha, m3.idx, m3.alpha);
+
+            const k = ne++;
+            if (k >= weight.a.length) {
+              const need = k + 1;
+              weight.ensure(need); a1.ensure(need); a2.ensure(need); a3.ensure(need);
+              p2s.ensure(need); i1.ensure(need); i2.ensure(need); i3.ensure(need);
+            }
+            weight.a[k] = w1n * w2[m] * p1 * p2 * kernel;
+            i1.a[k] = m1.idx; a1.a[k] = m1.alpha;
+            i2.a[k] = m2.idx; a2.a[k] = m2.alpha;
+            i3.a[k] = m3.idx; a3.a[k] = m3.alpha;
+            p2s.a[k] = p2;
           }
+        }
+
+        if (ne > pairStart) {
+          pairOff.ensure(np + 2); pairTarget.ensure(np + 1); pairP1.ensure(np + 1);
+          pairTarget.a[np] = ip;
+          pairP1.a[np] = p1;
+          np++;
+          pairOff.a[np] = ne;
         }
       }
     }
-    offsets[ip + 1] = buf.n;
+    offsets[ip + 1] = ne;
+    targetPairs[ip + 1] = np;
   }
-
-  const nEvents = buf.n;
-  const clip = <T extends Float64Array | Int32Array>(arr: T): T => arr.slice(0, nEvents) as T;
 
   return {
     grid: pState,
     weights: trapezoidWeights(pState),
     p_coll_max: pCollMax,
-    ncal,
-    nq_low: nqLow,
-    nq_high: nqHigh,
+    quad,
     offsets,
-    weight: clip(buf.weight),
-    i1: clip(buf.i1), a1: clip(buf.a1),
-    i2: clip(buf.i2), a2: clip(buf.a2),
-    i3: clip(buf.i3), a3: clip(buf.a3),
-    nEvents,
+    weight: weight.a.slice(0, ne),
+    i1: i1.a.slice(0, ne), a1: a1.a.slice(0, ne),
+    i2: i2.a.slice(0, ne), a2: a2.a.slice(0, ne),
+    i3: i3.a.slice(0, ne), a3: a3.a.slice(0, ne),
+    p2: p2s.a.slice(0, ne),
+    pairOffsets: pairOff.a.slice(0, np + 1),
+    targetPairs,
+    pairTarget: pairTarget.a.slice(0, np),
+    pairP1: pairP1.a.slice(0, np),
+    nPairs: np,
+    nEvents: ne,
     buildTime_ms: (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0,
   };
 }
 
 /**
- * Gain and loss components of C[f]. Port of `_components_numba`.
- * Writes into `gain`/`loss` to avoid per-call allocation in the ODE hot loop.
+ * Bare gain and loss components of C[f], already multiplied by `scale`
+ * (normally the tree prefactor 4π/N_cal²). Writes into `gain`/`loss`.
  */
 export function collisionComponents(
   f: Float64Array,
@@ -243,6 +286,7 @@ export function collisionComponents(
   kernelId: number,
   gain: Float64Array,
   loss: Float64Array,
+  scale: number,
 ): void {
   const { offsets, weight, i1, a1, i2, a2, i3, a3 } = geom;
   const n = f.length;
@@ -264,35 +308,15 @@ export function collisionComponents(
       if (kernelId === 0) {
         g = f1 * f2 * (1.0 + fp + f3);
         l = fp * f3 * (1.0 + f1 + f2);
-      } else if (kernelId === 1) {
+      } else {
         g = f1 * f2 * (fp + f3);
         l = fp * f3 * (f1 + f2);
-      } else {
-        g = f1 * f2;
-        l = fp * f3;
       }
       const w = weight[e];
       sg += w * g;
       sl += w * l;
     }
-    gain[i] = sg;
-    loss[i] = sl;
+    gain[i] = scale * sg;
+    loss[i] = scale * sl;
   }
-}
-
-/** C[f] = gain − loss, allocating scratch on demand. */
-export function collisionRhs(
-  f: Float64Array,
-  geom: CollisionGeometry,
-  kernelId: number,
-  out: Float64Array,
-  gainScratch?: Float64Array,
-  lossScratch?: Float64Array,
-): Float64Array {
-  const n = f.length;
-  const gain = gainScratch ?? new Float64Array(n);
-  const loss = lossScratch ?? new Float64Array(n);
-  collisionComponents(f, geom, kernelId, gain, loss);
-  for (let i = 0; i < n; i++) out[i] = gain[i] - loss[i];
-  return out;
 }

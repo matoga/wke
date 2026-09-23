@@ -5,12 +5,10 @@
  *
  *     q(k) = N_k / N,      ∫ q(k) dk = 1,      N_k = 4π k² n(k),
  *
- * because the calibration descriptors and the kinetic solver both need a scale
- * free profile. That is a working quantity, not something anyone measures, so
- * the UI never labels an axis "q". It shows N_k under one of two conventions,
- * chosen with a single switch in the header:
+ * a scale-free working quantity. The UI never labels an axis "q"; it shows N_k
+ * under one of two conventions, chosen with a single switch in the header:
  *
- *   `unit`          N_k / N — the profile as normalized, ∫ = 1.
+ *   `unit`          N_k / N (the profile as normalized), ∫ = 1.
  *   `experimental`  N_k on the scale the numbers actually came in on: the atom
  *                   number N when the parameters identify it, otherwise the
  *                   integral of the imported column.
@@ -24,12 +22,12 @@ export type NormMode = 'unit' | 'experimental';
 export const NORM_MODES: Array<{ id: NormMode; label: string; title: string }> = [
   {
     id: 'unit',
-    label: 'N_k / N',
+    label: 'Nₖ/N',
     title: 'Unit norm: the shell spectrum divided by the total atom number, ∫ dk = 1.',
   },
   {
     id: 'experimental',
-    label: 'N_k',
+    label: 'Nₖ',
     title: 'Experimental norm: the shell spectrum on the atom-number scale, ∫ dk = N.',
   },
 ];
@@ -58,9 +56,9 @@ export function normSpec(
     return {
       mode,
       scale: 1,
-      symbol: 'N_k / N',
+      symbol: 'Nₖ/N',
       unit: 'μm',
-      axis: 'N_k / N (μm)',
+      axis: 'Nₖ/N (μm)',
       source: 'normalized to ∫ dk = 1',
       fellBack: false,
     };
@@ -71,9 +69,9 @@ export function normSpec(
     return {
       mode,
       scale: N,
-      symbol: 'N_k',
-      unit: 'atoms·μm',
-      axis: 'N_k (atoms·μm)',
+      symbol: 'Nₖ',
+      unit: 'atoms μm',
+      axis: 'Nₖ (atoms μm)',
       source: `scaled to N = ${N.toPrecision(4)} atoms`,
       fellBack: false,
     };
@@ -84,9 +82,9 @@ export function normSpec(
     return {
       mode,
       scale: raw,
-      symbol: 'N_k',
+      symbol: 'Nₖ',
       unit: 'as imported',
-      axis: 'N_k (as imported)',
+      axis: 'Nₖ (as imported)',
       source: 'N is unknown; using the imported scale',
       fellBack: true,
     };
@@ -95,9 +93,9 @@ export function normSpec(
   return {
     mode,
     scale: 1,
-    symbol: 'N_k / N',
+    symbol: 'Nₖ/N',
     unit: 'μm',
-    axis: 'N_k / N (μm)',
+    axis: 'Nₖ/N (μm)',
     source: 'No absolute scale available; using unit norm',
     fellBack: true,
   };

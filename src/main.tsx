@@ -1,14 +1,14 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
-import './index.css';
+import '@fontsource/ibm-plex-sans/400.css';
+import '@fontsource/ibm-plex-sans/500.css';
+import '@fontsource/ibm-plex-sans/600.css';
+import '@fontsource/fraunces/500-italic.css';
+import '@fontsource/fraunces/600-italic.css';
 import 'katex/dist/katex.min.css';
-
-// Dark mode: check localStorage / system preference
-const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-const savedTheme = localStorage.getItem('theme');
-const dark = savedTheme === 'dark' || (savedTheme === null && prefersDark);
-if (dark) document.documentElement.classList.add('dark');
+import './styles/tokens.css';
+import './styles/app.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

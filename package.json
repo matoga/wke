@@ -1,5 +1,5 @@
 {
-  "name": "na-wke-calibrator",
+  "name": "wke-simulator",
   "private": true,
   "version": "1.0.0",
   "type": "module",
@@ -8,18 +8,22 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "test": "npm run test:physics && npm run test:ui",
-    "test:physics": "tsx tests/cross_validation.test.ts",
-    "test:ui": "tsx tests/ui_smoke.test.tsx"
+    "test": "npm run test:physics && npm run test:loops && npm run test:ui && npm run test:audit",
+    "test:physics": "tsx tests/physics.test.ts",
+    "test:ui": "tsx tests/ui_smoke.test.tsx",
+    "test:loops": "tsx tests/loops.test.ts",
+    "test:audit": "tsx tests/audit.test.ts",
+    "bench": "tsx scripts/convergence-bench.ts"
   },
   "dependencies": {
+    "@fontsource/fraunces": "^5.3.0",
+    "@fontsource/ibm-plex-sans": "^5.3.0",
     "@types/katex": "^0.16.8",
     "clsx": "^2.1.1",
     "katex": "^0.18.4",
     "lucide-react": "^0.468.0",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "tailwind-merge": "^2.5.4"
+    "react-dom": "^18.3.1"
   },
   "devDependencies": {
     "@types/jsdom": "^30.0.0",
@@ -27,13 +31,10 @@
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.3",
-    "autoprefixer": "^10.4.20",
     "jsdom": "^30.0.1",
-    "postcss": "^8.4.49",
-    "tailwindcss": "^3.4.15",
     "tsx": "^4.23.12",
     "typescript": "^5.6.3",
     "vite": "^5.4.11"
   },
-  "description": "Browser-based wave kinetic equation solver with box-trap volume calibration."
+  "description": "Browser solver for the isotropic wave kinetic equation of a 3D Bose gas, with renormalised kinetic models."
 }

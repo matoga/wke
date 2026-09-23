@@ -1,41 +1,43 @@
-/** Messages exchanged with the WKE Web Worker. */
+/** Messages exchanged with the WKE Web Worker, and shared app types. */
 
 import type { KernelType } from '../physics/collision';
+import type { ModelId } from '../physics/models';
+import type { AccuracyLevel } from '../physics/precision';
+import type { Termination } from '../physics/integrator';
 
-export type { KernelType };
+export type { KernelType, ModelId, AccuracyLevel, Termination };
 
 export interface WKERunRequest {
   type: 'run';
   runId: string;
+  model: ModelId;
   kernel: KernelType;
-  /** q(k) on the canonical descriptor grid, ∫ q dk = 1 */
+  accuracy: AccuracyLevel;
+  /** number of field components for the O(N) model */
+  components: number;
+  /** q(k) on the input grid, ∫ q dk = 1 */
   q: number[];
   density_um3: number;
+  /** signed scattering length (a₀) */
   a_a0: number;
   speciesKey: string;
-  tauMax: number;
   /** Stop when k_p(t) / k_p,0 reaches this value (0 < value < 1). */
   stopKpFraction: number;
-  rtol: number;
-  /** number of intermediate states saved for the timeline; more = smoother scrubbing, slightly slower */
+  /** safety bound on the dimensionless run time */
+  tauMax: number;
   nSnapshots: number;
+  /** physical times (s) at which to report k_p from the dense output */
+  tEval_s?: number[];
 }
 
 export interface WKEContinueRequest {
   type: 'continue';
   runId: string;
-  kernel: KernelType;
-  density_um3: number;
-  a_a0: number;
-  speciesKey: string;
-  /** Legacy field; continuations now end after the retained accepted-step budget. */
-  extraSeconds: number;
-  /** the original run's k_p,0, so a pre-target run can still detect the crossing */
-  kp0_um_inv: number;
-  /** Stop threshold inherited from the original run. */
-  stopKpFraction: number;
-  /** whether the run being extended had already crossed its stop threshold */
+  runKey: string;
+  /** whether the run being extended had already reached its stop target */
   alreadyReachedTarget: boolean;
+  kp0_um_inv: number;
+  stopKpFraction: number;
   nSnapshots: number;
 }
 
@@ -48,11 +50,14 @@ export type WKERequest = WKERunRequest | WKEContinueRequest | WKECancelRequest;
 export interface WKEProgress {
   type: 'progress';
   runId: string;
-  phase: 'geometry' | 'integrating';
+  phase: 'setup' | 'integrating';
   pct: number;
-  tau?: number;
+  t_s?: number;
   kp?: number;
   nSteps?: number;
+  loopDressing?: number;
+  poleIndicator?: number;
+  elapsed_ms: number;
 }
 
 export interface WKESnapshot {
@@ -68,35 +73,41 @@ export interface WKESnapshot {
 export interface WKEResult {
   type: 'result';
   runId: string;
+  runKey: string;
+  model: ModelId;
   kernel: KernelType;
-  /** true for a result produced by a 'continue' request — the caller merges it onto the prior result rather than replacing it */
-  continuation?: boolean;
-  /** physical k grid the solver actually used [μm⁻¹] */
+  accuracy: AccuracyLevel;
+  components: number;
+  /** true for a result produced by a 'continue' request; merged onto the prior result */
+  continuation: boolean;
+  /** physical k grid the solver used (μm⁻¹) */
   k_um_inv: number[];
   kp0_um_inv: number;
   stopKpFraction: number;
   reachedTarget: boolean;
   tauTarget: number | null;
   dtTarget_s: number | null;
-  /** Backward-compatible half-time fields; populated only for stopKpFraction = 0.5. */
-  reachedHalf: boolean;
-  tauHalf: number | null;
-  dtHalf_s: number | null;
+  termination: Termination;
+  terminationMessage: string | null;
   snapshots: WKESnapshot[];
-  kpTrack: { t_s: number[]; kp: number[] };
+  kpTrack: { t_s: number[]; kp: number[]; loop: number[]; pole: number[] };
+  evalTrack: { t_s: number[]; kp: number[] };
   scales: {
     xi_um: number;
+    /** effective time unit, including the O(N) clock factor (s) */
     t0_s: number;
     ncal: number;
     na_um2: number;
     density_um3: number;
+    sign: 1 | -1;
   };
   nSteps: number;
   nRhs: number;
   nRejected: number;
   wallTime_ms: number;
-  geometry_ms: number;
+  setup_ms: number;
   nEvents: number;
+  threads: number;
   /** fraction of ∫q dk captured by the solver's own k grid (1 = full support) */
   gridCoverage: number;
   maxDN: number;
@@ -106,51 +117,11 @@ export interface WKEResult {
 export interface WKEError {
   type: 'error';
   runId: string;
-  kernel: KernelType;
   message: string;
 }
 
 export type WKEResponse = WKEProgress | WKEResult | WKEError;
 
-export type ParameterMode = 'known_NVa' | 'known_na' | 'measured_dt';
-
-export interface PhysicsInputs {
-  mode: ParameterMode;
-  speciesKey: string;
-  N: number | null;
-  V_um3: number | null;
-  density_um3: number | null;
-  a_a0: number | null;
-  dt_measured_s: number | null;
-  /** Optional simulation-refined inverse result; only used in measured_dt mode. */
-  na_override_um2?: number | null;
-}
-
-export interface DerivedPhysics {
-  /** null when the mode does not identify it */
-  density_um3: number | null;
-  a_a0: number | null;
-  na_um2: number | null;
-  V_um3: number | null;
-  N: number | null;
-  /** true when n and a are separately known, so the quantum kernel is meaningful */
-  quantumAvailable: boolean;
-  notes: string[];
-}
-
-/** Immutable description of the inputs that produced a saved run artifact. */
-export interface RunProvenance {
-  origin: 'solver' | 'playground';
-  spectrumLabel: string;
-  mode: ParameterMode;
-  speciesKey: string;
-  density_um3: number | null;
-  a_a0: number | null;
-  na_um2: number | null;
-  N: number | null;
-  V_um3: number | null;
-  tauMax: number;
-  rtol: number;
-  nSnapshots: number;
-  stopKpFraction: number;
+export function runKeyOf(model: ModelId, kernel: KernelType, accuracy: AccuracyLevel): string {
+  return `${model}:${kernel}:${accuracy}`;
 }

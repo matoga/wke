@@ -5,7 +5,6 @@
 
 /**
  * Generate a logarithmically spaced grid from p_min to p_max with N points.
- * Matches Python `wke.grid.logarithmic_grid`.
  */
 export function logarithmicGrid(p_min: number, p_max: number, N: number): Float64Array {
   const grid = new Float64Array(N);
@@ -19,7 +18,6 @@ export function logarithmicGrid(p_min: number, p_max: number, N: number): Float6
 
 /**
  * Compute cell-centered quadrature weights Δp for trapezoid integration on a grid.
- * dp_full[i] matches the Python convention.
  */
 export function trapzWeights(grid: Float64Array): Float64Array {
   const N = grid.length;

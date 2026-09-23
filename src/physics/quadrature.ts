@@ -1,17 +1,11 @@
-/**
- * Gauss-Legendre quadrature and log-p interpolation maps.
- *
- * Direct TypeScript port of `wke/grid.py`:
- *   - `gauss_legendre_log`  → `gaussLegendreLog`
- *   - `interpolation_map`   → `interpolationMap`
- */
+/** Gauss-Legendre quadrature and log-p interpolation maps. */
 
 const leggaussCache = new Map<number, { x: Float64Array; w: Float64Array }>();
 
 /**
  * Nodes and weights of the n-point Gauss-Legendre rule on [-1, 1].
- * Newton iteration on P_n using the standard three-term recurrence; matches
- * `numpy.polynomial.legendre.leggauss` to ~1e-15.
+ * Newton iteration on P_n using the standard three-term recurrence, accurate
+ * to about 1e-15.
  */
 export function leggauss(n: number): { x: Float64Array; w: Float64Array } {
   const cached = leggaussCache.get(n);
@@ -52,7 +46,6 @@ export function leggauss(n: number): { x: Float64Array; w: Float64Array } {
 
 /**
  * Nodes and `dp` weights on [a, b] for an integral transformed with s = log(p).
- * Port of `gauss_legendre_log`.
  */
 export function gaussLegendreLog(
   a: number,
@@ -79,7 +72,6 @@ export function gaussLegendreLog(
 
 /**
  * Index, upper weight, and low-boundary flag for linear interpolation in log p.
- * Port of `interpolation_map`.
  *
  * `logGrid` must be the strictly increasing log of the state grid.
  */
@@ -90,7 +82,7 @@ export function interpolationMap(
   const lv = Math.log(value);
   const n = logGrid.length;
 
-  // searchsorted(logGrid, lv, side='right') - 1
+  // index of the last grid point <= lv
   let lo = 0;
   let hi = n;
   while (lo < hi) {
