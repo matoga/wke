@@ -26,7 +26,7 @@ function header(lines: string[]): string {
 function runHeader(rec: RunRecord): string[] {
   const r = rec.result;
   return [
-    `model: ${MODEL_BY_ID[r.model].label}${r.kernel === 'quantum' ? ', Bose +1 statistics' : ''}${r.model === 'large-n' ? `, N = ${r.components}` : ''}`,
+    `model: ${MODEL_BY_ID[r.model].label}${r.kernel === 'quantum' ? ', Bose +1 statistics' : ''}`,
     `accuracy: ${PRECISION[r.accuracy].label}`,
     `density n = ${r.scales.density_um3} um^-3, signed na = ${r.scales.na_um2} um^-2`,
     `healing length xi = ${r.scales.xi_um} um, time unit t0 = ${r.scales.t0_s} s`,

@@ -7,7 +7,9 @@
 import { Badge, Card, Status } from '../ui/primitives';
 import type { Tone } from '../ui/primitives';
 import { Tex } from '../ui/Tex';
-import { duration, fixed, fmt, pct, time } from '../ui/format';
+import { duration, fixed, fmt, pct, signed, time, timeText } from '../ui/format';
+import { peakMomentum } from '../physics/descriptors';
+import type { WKESnapshot } from '../types/wke';
 import { driftVerdict, loopVerdict, runLabel, terminationVerdict } from '../ui/runView';
 import { MODEL_BY_ID } from '../physics/models';
 import { PRECISION } from '../physics/precision';
@@ -18,14 +20,19 @@ import type { SimulationSettings } from '../state/useSimulationSettings';
 
 export interface ScaleSummary {
   kXi: number | null;
-  eps: number | null;
-  chi0: number | null;
   t0_s: number | null;
 }
 
+/** The state shown in the spectrum panel. */
+export interface FrameView {
+  snap: WKESnapshot;
+  k: Float64Array;
+}
+
 export function ResultCard({
-  record, stale, progress, settings, derived, desc, scales, canRun, runBlocker, onRun, onRunAll, onCancel, onStopAndReset,
+  record, stale, progress, settings, derived, desc, scales, frame, canRun, runBlocker, onRun, onRunAll, onCancel, onStopAndReset,
 }: {
+  frame: FrameView | null;
   record: RunRecord | null;
   stale: boolean;
   progress: RunProgress;
@@ -41,6 +48,11 @@ export function ResultCard({
   onStopAndReset: () => void;
 }) {
   const r = record?.result ?? null;
+  const frameView = frame ? (() => {
+    const { snap, k } = frame;
+    const e = Float64Array.from(snap.q, (v, i) => v * k[i] * k[i]);
+    return { t_s: snap.t_s, kp: snap.kp_um_inv, kE: peakMomentum(k, e), loop: snap.mHist ? (snap.loop ?? null) : null };
+  })() : null;
   const t = time(r?.dtTarget_s ?? null);
   const check = record?.check;
   const pm = check && check !== 'pending' && check.dtRel != null ? Math.abs(check.dtRel) : null;
@@ -94,7 +106,7 @@ export function ResultCard({
         </div>
         <div className="hero-sub">
           {r ? (
-            <><b>{MODEL_BY_ID[r.model].label}</b>{r.kernel === 'quantum' ? ', Bose +1 statistics' : ''}{r.model === 'large-n' ? `, N = ${r.components}` : ''} · {PRECISION[r.accuracy].label} accuracy</>
+            <><b>{MODEL_BY_ID[r.model].label}</b>{r.kernel === 'quantum' ? ', Bose +1 statistics' : ''} · {PRECISION[r.accuracy].label} accuracy</>
           ) : 'Run a model to measure the relaxation time.'}
         </div>
       </div>
@@ -111,10 +123,19 @@ export function ResultCard({
         <dt>density <Tex math="n" /> (μm⁻³)</dt><dd>{fmt(derived.density_um3)}</dd>
         <dt><Tex math="na" /> (μm⁻²)</dt><dd>{fmt(derived.na_um2)}</dd>
         <dt><Tex math="k_\xi = \sqrt{8\pi n|a|}" /> (μm⁻¹)</dt><dd>{fmt(scales.kXi)}</dd>
-        <dt title="Loop corrections scale with this ratio for a fixed spectral shape.">loop parameter <Tex math="(k_\xi/k_{p,0})^2" /></dt><dd>{fmt(scales.eps, 3)}</dd>
-        <dt title="Static exchange loop Re L₋ at zero transfer: −4πna⟨k⁻²⟩.">static loop <Tex math="\chi_0" /></dt><dd>{fmt(scales.chi0, 3)}</dd>
         <dt>time unit <Tex math="t_0 = \hbar/|g|n" /> (ms)</dt><dd>{scales.t0_s != null ? fmt(scales.t0_s * 1e3) : 'n/a'}</dd>
       </dl>
+      {frameView && (
+        <dl className="kv now" aria-live="off">
+          <dt className="kv-head">At <Tex math="t" /> = {timeText(frameView.t_s)}</dt><dd />
+          <dt title="Peak of the shell spectrum k²nₖ.">peak <Tex math="k_p(t)" /> (μm⁻¹)</dt><dd>{fixed(frameView.kp, 4)}</dd>
+          <dt title="Peak of k⁴nₖ, where the kinetic energy sits; found like kₚ.">energy peak <Tex math="k_E(t)" /> (μm⁻¹)</dt><dd>{fixed(frameView.kE, 4)}</dd>
+          <dt><Tex math="k_p/k_{p,0}" /></dt><dd>{fixed(frameView.kp / desc.kp0_um_inv, 4)}</dd>
+          {frameView.loop != null && (
+            <><dt title="Mean of M − 1 over the collisions, weighted by their rate.">loop strength <Tex math="\langle M\rangle - 1" /></dt><dd>{signed(frameView.loop, 4)}</dd></>
+          )}
+        </dl>
+      )}
 
       {running && <div className="progress" aria-hidden="true"><span style={{ width: `${Math.round(100 * Math.min(1, Math.max(0.03, progress.pct)))}%` }} /></div>}
       <Status state={statusState}>{statusText}</Status>
@@ -135,7 +156,7 @@ export function ResultCard({
           </>
         ) : (
           <button type="button" className="btn primary big" onClick={onRun} disabled={!canRun} title={runBlocker ?? undefined}>
-            Run {MODEL_BY_ID[settings.model].short}
+            Run simulation ({MODEL_BY_ID[settings.model].short})
           </button>
         )}
         <button type="button" className="btn big" onClick={onRunAll} disabled={!canRun || running}>

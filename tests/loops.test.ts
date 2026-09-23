@@ -230,13 +230,13 @@ section('Model identities');
 section('Models end to end (Draft, one-component gas)');
 {
   const gaussQ = Array.from(INPUT_GRID, (k) => Math.exp(-0.5 * ((k - 2) / 0.28) ** 2));
-  const req = (model: WKERunRequest['model'], a_a0: number, components = 1): WKERunRequest => ({
-    type: 'run', runId: 't', model, kernel: 'classical', accuracy: 'draft', components,
+  const req = (model: WKERunRequest['model'], a_a0: number): WKERunRequest => ({
+    type: 'run', runId: 't', model, kernel: 'classical', accuracy: 'draft',
     q: gaussQ, density_um3: 2.8331, a_a0, speciesKey: 'K39', stopKpFraction: 0.5, tauMax: 4000, nSnapshots: 20,
   });
   const backend = localBackend();
-  const t = async (model: WKERunRequest['model'], a: number, components = 1) =>
-    (await runSimulation(req(model, a, components), backend)).result;
+  const t = async (model: WKERunRequest['model'], a: number) =>
+    (await runSimulation(req(model, a), backend)).result;
   // One loop is only perturbative at weaker coupling: at 50 a₀ this shell
   // already carries a −40% dressing and the bracket goes negative mid-run.
   const bare25 = await t('bare', 25);
@@ -245,11 +245,10 @@ section('Models end to end (Draft, one-component gas)');
   const oneStrong = await t('one-loop', 50);
   const bare = await t('bare', 50);
   const chain = await t('chain', -50);
-  const largeN = await t('large-n', -50, 3);
   const heur = await t('heuristic', -50);
   check('one loop at 50 a₀ stops cleanly when the bracket turns negative', oneStrong.termination === 'pole',
     `${oneStrong.termination} at k_p/k_p,0 = ${(oneStrong.kpTrack.kp.at(-1)! / oneStrong.kp0_um_inv).toFixed(3)}`);
-  for (const r of [bare25, oneRep, oneAtt, bare, chain, largeN, heur]) {
+  for (const r of [bare25, oneRep, oneAtt, bare, chain, heur]) {
     check(`${r.model} (a ${r.scales.sign > 0 ? '> 0' : '< 0'}) reaches the target`, r.termination === 'target', `${r.termination} ${r.terminationMessage ?? ''}`);
   }
   check('repulsion slows the one-loop relaxation', oneRep.dtTarget_s! > bare25.dtTarget_s!,
@@ -258,7 +257,6 @@ section('Models end to end (Draft, one-component gas)');
     `${(oneAtt.dtTarget_s! / bare25.dtTarget_s!).toFixed(4)} × bare`);
   check('attraction speeds up the heuristic resummation', heur.dtTarget_s! < bare.dtTarget_s!,
     `${(heur.dtTarget_s! / bare.dtTarget_s!).toFixed(4)} × bare`);
-  relClose('O(N) model = bubble chain on a clock slowed by 2N', largeN.dtTarget_s!, 6 * chain.dtTarget_s!, 1e-12);
   note(`  t/t_bare: one loop at ±25 a₀ ${(oneRep.dtTarget_s! / bare25.dtTarget_s!).toFixed(4)} / ${(oneAtt.dtTarget_s! / bare25.dtTarget_s!).toFixed(4)}; at −50 a₀ chain −a ${(chain.dtTarget_s! / bare.dtTarget_s!).toFixed(4)}; heuristic −a ${(heur.dtTarget_s! / bare.dtTarget_s!).toFixed(4)}`);
 }
 

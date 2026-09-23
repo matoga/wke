@@ -29,7 +29,7 @@ g.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} };
   addEventListener() {}, removeEventListener() {}, dispatchEvent: () => false,
 });
 
-const MODEL_FACTOR: Record<string, number> = { bare: 1, 'one-loop': 1.19, chain: 1.03, 'large-n': 6.18, heuristic: 1.13 };
+const MODEL_FACTOR: Record<string, number> = { bare: 1, 'one-loop': 1.19, chain: 1.03, heuristic: 1.13 };
 const posted: Array<Record<string, unknown>> = [];
 
 class WorkerStub {
@@ -60,7 +60,7 @@ class WorkerStub {
       data: {
         type: 'result', runId: req.runId, runKey, model: continuation ? String(runKey).split(':')[0] : model,
         kernel: continuation ? 'classical' : req.kernel, accuracy: continuation ? String(runKey).split(':')[2] : accuracy,
-        components: req.components ?? 3, continuation,
+        continuation,
         k_um_inv: k, kp0_um_inv: 2, stopKpFraction: req.stopKpFraction ?? 0.5,
         reachedTarget: !pole && !continuation, tauTarget: dt, dtTarget_s: continuation ? null : dt,
         termination: pole ? 'pole' : continuation ? 'steps' : 'target',
@@ -126,7 +126,7 @@ for (const banned of ['Calibrat', 'κ', 'Δt₁ᐟ₂', 'calibration']) {
 }
 
 const modelButtons = Array.from(container.querySelectorAll('.models .model')) as HTMLButtonElement[];
-check('five kinetic models offered', modelButtons.length === 5, `${modelButtons.length}`);
+check('four kinetic models offered', modelButtons.length === 4, `${modelButtons.length}`);
 check('exactly one model selected', modelButtons.filter((b) => b.getAttribute('aria-pressed') === 'true').length === 1);
 const accuracy = container.querySelector('[aria-label="Accuracy"]');
 check('accuracy is a four-level segmented control', accuracy?.querySelectorAll('button').length === 4);
@@ -134,9 +134,9 @@ check('accuracy is a four-level segmented control', accuracy?.querySelectorAll('
 // Attractive interactions are accepted; a = 0 is not.
 const aInput = fieldInput('Scattering length')!;
 await setInput(aInput, '0');
-check('a = 0 blocks the run', byText('Run One loop')?.disabled === true && text().includes('non-zero'));
+check('a = 0 blocks the run', byText('Run simulation (One loop)')?.disabled === true && text().includes('non-zero'));
 await setInput(aInput, '-27');
-check('negative a is accepted', byText('Run One loop')?.disabled === false && !text().includes('non-zero'));
+check('negative a is accepted', byText('Run simulation (One loop)')?.disabled === false && !text().includes('non-zero'));
 await setInput(aInput, '25');
 
 // Cylinder geometry.
@@ -145,7 +145,7 @@ check('cylinder volume is derived', text().includes('Cylinder volume'));
 await click(byText('N and V'), 'N and V mode');
 
 // A single run.
-await click(byText('Run One loop'), 'run');
+await click(byText('Run simulation (One loop)'), 'run');
 await settle();
 check('hero shows the stop time', (container.querySelector('.hero-num')?.textContent ?? '').includes('373.2'),
   container.querySelector('.hero-num')?.textContent ?? '');
@@ -157,13 +157,13 @@ check('loop verdict badge shown', text().includes('perturbative') || text().incl
 await click(byText('Run all models'), 'run all');
 for (let i = 0; i < 10; i++) await settle();
 const rows = Array.from(container.querySelectorAll('section[aria-label="Peak momentum against time"] tbody tr'));
-check('all five models appear in the comparison table', rows.length === 5, `${rows.length}`);
+check('all four models appear in the comparison table', rows.length === 4, `${rows.length}`);
 check('comparison reports ratios to bare', text().includes('1.1900'));
 
 // Heuristic model with attraction runs into the pole.
 await click(modelButtons.find((b) => (b.textContent ?? '').includes('Heuristic')), 'heuristic');
 await setInput(aInput, '-25');
-await click(byText('Run Heuristic'), 'run heuristic');
+await click(byText('Run simulation (Heuristic)'), 'run heuristic');
 await settle();
 check('pole stop is reported', text().includes('approached its pole') && text().includes('stopped at the pole'));
 await setInput(aInput, '25');
@@ -173,7 +173,7 @@ const convergence = Array.from(container.querySelectorAll('label.check')).find((
   .querySelector('input') as HTMLInputElement;
 await click(convergence, 'convergence toggle');
 await click(modelButtons.find((b) => (b.textContent ?? '').includes('Bare')), 'bare');
-await click(byText('Run Bare'), 'run bare');
+await click(byText('Run simulation (Bare)'), 'run bare');
 for (let i = 0; i < 6; i++) await settle();
 const checkRun = posted.filter((p) => p.type === 'run').at(-1)!;
 check('convergence rerun goes one level up', checkRun.accuracy === 'high' && Array.isArray(checkRun.tEval_s), String(checkRun.accuracy));

@@ -3,6 +3,7 @@
 A browser solver for the isotropic wave kinetic equation of a three-dimensional Bose gas. Give it a momentum
 spectrum, a density and a scattering length, and it integrates the four-wave kinetic equation forward in time,
 either bare or with loop-renormalised collisions, and shows how the spectrum cascades and how fast its peak moves.
+The scope is the one-component (N = 1) gas; the N → ∞ bubble chain is a resummation from large-N theory applied to it.
 
 Everything runs in the page: no backend, no network request after the page has loaded, no data leaves the browser.
 The collision sum is split across the processor's cores with Web Workers.
@@ -40,7 +41,6 @@ gives both in full.
 | Bare | 1 | Leading order. Even in a. |
 | One loop, N = 1 | 1 + 2⟨Re L₊⟩ + 8⟨Re L₋⟩ | Exact next order for a one-component gas. Odd in a. |
 | Bubble chain, N → ∞ | ⟨\|1 − L₋\|⁻²⟩ | Large-N exchange chain on the one-component tree level. |
-| O(N) model, large N | as the chain, with t → 2N t | N-component model at leading order in 1/N. |
 | Heuristic, N = 1 | ⟨\|1 − 4L₋\|⁻²⟩ | Exchange chain with the one-component rung weight. Omits L₊ and crossed diagrams; its pole location is not derived. |
 
 ⟨·⟩ is the average over the angular configurations of each collision: for fixed magnitudes the transferred
@@ -70,7 +70,16 @@ stops when its bracket turns negative on more than 0.1% of the collision weight,
 One control sets grid size, partner quadrature, loop tables and integrator tolerance together, so only validated
 combinations run. Tick **Check convergence** to rerun any run one level higher and report the difference.
 
-ACCURACY_TABLE
+| Level | Grid points | Quadrature | Collision events | Stop time, smooth shell | Stop time, structured spectrum |
+| --- | --- | --- | --- | --- | --- |
+| Draft | 300 | 12 × 1 | 0.17 M | about 2% | about 4% |
+| Standard | 500 | 12 × 2 | 1.1 M | 0.05% | 0.5% |
+| High | 1000 | 12 × 2 | 2.2 M | 0.02% | 0.1% |
+| Reference | 2000 | 12 × 2 | 4.4 M | reference | reference |
+
+The partner quadrature is converged at 12 × 2; the levels refine the grid. The peak kₚ is the vertex of a
+least-squares parabola through the top 2% of ln(k² nₖ), which keeps the stop time stable when a broad peak is
+sampled on a grid.
 
 ## Implementation
 

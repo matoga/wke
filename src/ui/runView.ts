@@ -10,11 +10,10 @@ import type { Tone } from './primitives';
 export const modelColor = (model: ModelId): string => `var(--m-${model})`;
 
 export const modelDashed = (model: ModelId, kernel: KernelType): boolean =>
-  model === 'large-n' || kernel === 'quantum';
+  kernel === 'quantum';
 
-export function runLabel(r: Pick<WKEResult, 'model' | 'kernel' | 'components'>): string {
+export function runLabel(r: Pick<WKEResult, 'model' | 'kernel'>): string {
   const m = MODEL_BY_ID[r.model];
-  if (r.model === 'large-n') return `${m.short}, N = ${r.components}`;
   return r.kernel === 'quantum' ? `${m.short}, Bose +1` : m.short;
 }
 
@@ -27,6 +26,23 @@ export function nearestSnapshot(snaps: WKESnapshot[], t: number): number {
     if (snaps[mid].t_s <= t) lo = mid; else hi = mid;
   }
   return Math.abs(snaps[hi].t_s - t) < Math.abs(snaps[lo].t_s - t) ? hi : lo;
+}
+
+/**
+ * States to overlay: the lattice states on the smallest power-of-two stride
+ * that leaves at most `target` of them, plus the first and the latest state.
+ * The choice depends only on which states exist, so a run shows the same
+ * curves while it runs, when it finishes, and before and after Continue.
+ */
+export function displayFrames(snaps: WKESnapshot[], target: number): number[] {
+  const lattice: Array<[number, number]> = [];
+  snaps.forEach((s, i) => { if (s.lattice !== undefined) lattice.push([s.lattice, i]); });
+  let stride = 1;
+  const count = (st: number) => lattice.reduce((c, [l]) => c + (l % st === 0 ? 1 : 0), 0);
+  while (stride < 2 ** 52 && count(stride) > target) stride *= 2;
+  const picked = new Set(lattice.filter(([l]) => l % stride === 0).map(([, i]) => i));
+  if (snaps.length) { picked.add(0); picked.add(snaps.length - 1); }
+  return [...picked].sort((a, b) => a - b);
 }
 
 /** Match the main branch's blue → cyan → green → yellow → red time ramp. */

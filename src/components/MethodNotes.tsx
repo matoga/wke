@@ -11,7 +11,6 @@ const MODEL_NOTES: Record<string, string> = {
   bare: 'Leading order in the coupling. Even in a, so attraction and repulsion relax identically.',
   'one-loop': 'Exact next order for a one-component gas. Odd in a: attraction speeds the cascade up, repulsion slows it down. Quantitative while the dressing |M − 1| stays small.',
   chain: 'All-order resummation of the exchange bubble chain, as in the large-N vector model, placed on the one-component tree level. Reduces to 1 + 2 Re L₋ at one loop.',
-  'large-n': 'The N-component model at leading order in 1/N. Its shapes follow the bubble chain exactly; only the clock differs, t → 2N t.',
   heuristic: 'Exchange chain with the one-component rung weight 4. It reproduces the exchange part 8 Re L₋ of the one-loop term, but omits L₊ and all crossed diagrams, and the location of its pole, 4 Re L₋ = 1, is not derived. A mean-field linear-response argument would place it at 2 Re L₋ = 1 instead.',
 };
 

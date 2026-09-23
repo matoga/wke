@@ -11,8 +11,6 @@ export interface SimulationSettings {
   kernel: KernelType;
   accuracy: AccuracyLevel;
   stopKpFraction: number;
-  /** field components N of the O(N) model */
-  components: number;
   checkConvergence: boolean;
 }
 
@@ -21,7 +19,6 @@ export const DEFAULT_SETTINGS: SimulationSettings = {
   kernel: 'classical',
   accuracy: 'standard',
   stopKpFraction: 0.5,
-  components: 3,
   checkConvergence: false,
 };
 
@@ -29,8 +26,7 @@ const isSettings = (v: unknown): v is SimulationSettings =>
   isObject(v) && typeof v.model === 'string' && v.model in MODEL_BY_ID
   && (v.kernel === 'classical' || v.kernel === 'quantum')
   && ACCURACY_LEVELS.includes(v.accuracy as AccuracyLevel)
-  && typeof v.stopKpFraction === 'number' && v.stopKpFraction > 0 && v.stopKpFraction < 1
-  && typeof v.components === 'number' && v.components >= 1;
+  && typeof v.stopKpFraction === 'number' && v.stopKpFraction > 0 && v.stopKpFraction < 1;
 
 export function useSimulationSettings() {
   const [settings, setSettings] = useState<SimulationSettings>(() => load('settings', DEFAULT_SETTINGS, isSettings));

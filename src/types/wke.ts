@@ -13,8 +13,6 @@ export interface WKERunRequest {
   model: ModelId;
   kernel: KernelType;
   accuracy: AccuracyLevel;
-  /** number of field components for the O(N) model */
-  components: number;
   /** q(k) on the input grid, ∫ q dk = 1 */
   q: number[];
   density_um3: number;
@@ -73,6 +71,12 @@ export interface WKESnapshot {
   dN_over_N: number;
   dE_over_E: number;
   stage: string;
+  /** index on the absolute sampling lattice; absent for event states */
+  lattice?: number;
+  /** collision-weighted loop dressing at this state */
+  loop?: number;
+  /** rate-weighted distribution of M on the bins of M_HIST (loop models) */
+  mHist?: number[];
 }
 
 /** A display copy of an accepted state. It does not change the solver state. */
@@ -83,12 +87,13 @@ export interface WKELive {
   continuation: boolean;
   model: ModelId;
   kernel: KernelType;
-  components: number;
   k_um_inv: number[];
   kp0_um_inv: number;
   stopKpFraction: number;
   density_um3: number;
   snapshot: WKESnapshot;
+  /** current lattice stride: states whose lattice index it does not divide are dropped */
+  stride: number;
 }
 
 export interface WKEResult {
@@ -98,7 +103,6 @@ export interface WKEResult {
   model: ModelId;
   kernel: KernelType;
   accuracy: AccuracyLevel;
-  components: number;
   /** true for a result produced by a 'continue' request; merged onto the prior result */
   continuation: boolean;
   /** physical k grid the solver used (μm⁻¹) */
@@ -111,11 +115,13 @@ export interface WKEResult {
   termination: Termination;
   terminationMessage: string | null;
   snapshots: WKESnapshot[];
+  /** lattice stride at the end of this segment */
+  latticeStride: number;
   kpTrack: { t_s: number[]; kp: number[]; loop: number[]; pole: number[] };
   evalTrack: { t_s: number[]; kp: number[] };
   scales: {
     xi_um: number;
-    /** effective time unit, including the O(N) clock factor (s) */
+    /** time unit t₀ (s) */
     t0_s: number;
     ncal: number;
     na_um2: number;

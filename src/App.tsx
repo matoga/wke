@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { AppHeader } from './components/AppHeader';
 import { SpectrumCard } from './components/SpectrumCard';
 import { ResultCard } from './components/ResultCard';
-import type { ScaleSummary } from './components/ResultCard';
+import type { FrameView, ScaleSummary } from './components/ResultCard';
 import { SetupCard } from './components/SetupCard';
 import { KpCompareCard, compatibleRuns } from './components/KpCompareCard';
 import { OccupationCard } from './components/OccupationCard';
@@ -16,11 +16,10 @@ import { useRunLibrary } from './state/useRunLibrary';
 import type { RunJob, RunRecord, RunSetup } from './state/useRunLibrary';
 import { normSpec } from './ui/norm';
 import type { NormMode } from './ui/norm';
-import { MODELS, clockFactor } from './physics/models';
+import { MODELS } from './physics/models';
 import type { ModelId } from './physics/models';
-import { SPECIES, BOHR_RADIUS_UM } from './physics/constants';
+import { SPECIES, BOHR_RADIUS_UM, HBAR_JS } from './physics/constants';
 import { computeScales } from './physics/scales';
-import { trapz } from './physics/grid';
 
 export default function App() {
   const system = useSystemParameters();
@@ -30,21 +29,20 @@ export default function App() {
   const { derived, inputs } = system;
   const { settings } = sim;
 
-  const stopValid = settings.stopKpFraction > 0.05 && settings.stopKpFraction < 0.99;
-  const runBlocker = derived.errors[0] ?? (stopValid ? null : 'The stop target must lie between 0.05 and 0.99.');
+  const stopValid = settings.stopKpFraction >= 0.01 && settings.stopKpFraction < 0.99;
+  const runBlocker = derived.errors[0] ?? (stopValid ? null : 'The stop target must lie between 0.01 and 0.99.');
 
   const setup: RunSetup | null = useMemo(() => {
     if (runBlocker || derived.density_um3 == null || derived.a_a0 == null) return null;
     return {
-      fingerprint: [source.fingerprint, derived.density_um3, derived.a_a0, inputs.speciesKey, settings.stopKpFraction, settings.components].join('|'),
+      fingerprint: [source.fingerprint, derived.density_um3, derived.a_a0, inputs.speciesKey, settings.stopKpFraction].join('|'),
       q: Array.from(source.spectrum.q),
       density_um3: derived.density_um3,
       a_a0: derived.a_a0,
       speciesKey: inputs.speciesKey,
       stopKpFraction: settings.stopKpFraction,
-      components: settings.components,
     };
-  }, [runBlocker, derived, source.fingerprint, source.spectrum, inputs.speciesKey, settings.stopKpFraction, settings.components]);
+  }, [runBlocker, derived, source.fingerprint, source.spectrum, inputs.speciesKey, settings.stopKpFraction]);
 
   const lib = useRunLibrary(setup);
   const compared = useMemo(() => compatibleRuns(lib.records, setup?.fingerprint ?? null), [lib.records, setup]);
@@ -62,18 +60,12 @@ export default function App() {
   }, [compared, settings.accuracy]);
 
   const scales: ScaleSummary = useMemo(() => {
-    if (derived.density_um3 == null || derived.a_a0 == null) return { kXi: null, eps: null, chi0: null, t0_s: null };
+    if (derived.density_um3 == null || derived.a_a0 == null) return { kXi: null, t0_s: null };
     const sc = computeScales(derived.density_um3, derived.a_a0, SPECIES[inputs.speciesKey]);
     const kXi = Math.sqrt(8 * Math.PI * derived.density_um3 * Math.abs(derived.a_a0) * BOHR_RADIUS_UM);
-    const k = source.spectrum.k, q = source.spectrum.q;
-    const invK2 = trapz(Float64Array.from(q, (v, i) => v / (k[i] * k[i])), k);
-    return {
-      kXi,
-      eps: (kXi / source.descriptors.kp0_um_inv) ** 2,
-      chi0: -4 * Math.PI * derived.density_um3 * derived.a_a0 * BOHR_RADIUS_UM * invK2,
-      t0_s: sc.t0_s * clockFactor(settings.model, settings.components),
-    };
-  }, [derived, inputs.speciesKey, source.spectrum, source.descriptors, settings.model, settings.components]);
+    return { kXi, t0_s: sc.t0_s };
+  }, [derived, inputs.speciesKey]);
+  const [frame, setFrame] = useState<FrameView | null>(null);
 
   const norm = normSpec(normMode, { atomNumber: derived.N, importedIntegral: source.spectrum.rawIntegral });
 
@@ -92,6 +84,7 @@ export default function App() {
         <div className="stack">
           <div className="slot o2">
             <SpectrumCard
+              onFrame={setFrame}
               record={selected}
               live={lib.live}
               stale={stale}
@@ -110,6 +103,7 @@ export default function App() {
           </div>
           <div className="slot o3">
             <KpCompareCard
+              hbarOverM_um2_per_s={SPECIES[inputs.speciesKey] ? (HBAR_JS / SPECIES[inputs.speciesKey].massKg) * 1e12 : null}
               records={compared}
               selectedKey={lib.selectedKey}
               onSelect={lib.setSelectedKey}
@@ -139,6 +133,7 @@ export default function App() {
               derived={derived}
               desc={source.descriptors}
               scales={scales}
+              frame={frame}
               canRun={setup != null}
               runBlocker={runBlocker}
               onRun={() => lib.run([job(settings.model)])}

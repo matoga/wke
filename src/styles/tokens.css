@@ -20,7 +20,6 @@
   --m-bare: #4f5d6e;
   --m-one-loop: #2f55d4;
   --m-chain: #c8701f;
-  --m-large-n: #c8701f;
   --m-heuristic: #1f8a74;
 
   --serif: "Fraunces", "Iowan Old Style", Georgia, serif;
@@ -48,7 +47,6 @@
     --m-bare: #aab5c4;
     --m-one-loop: #7f9dff;
     --m-chain: #f0a45a;
-    --m-large-n: #f0a45a;
     --m-heuristic: #4fc9ad;
   }
 }
@@ -73,6 +71,5 @@
   --m-bare: #aab5c4;
   --m-one-loop: #7f9dff;
   --m-chain: #f0a45a;
-  --m-large-n: #f0a45a;
   --m-heuristic: #4fc9ad;
 }

@@ -16,7 +16,7 @@ import { completeRhs } from './rhs';
 import type { RhsDiagnostics, RhsFunction } from './rhs';
 import { SPECIES, DEFAULT_SPECIES_KEY, P_MIN, solverPMax } from './constants';
 import { PRECISION } from './precision';
-import { MODEL_BY_ID, clockFactor } from './models';
+import { MODEL_BY_ID } from './models';
 import { runKeyOf } from '../types/wke';
 import type { WKEContinueRequest, WKELive, WKEProgress, WKEResult, WKERunRequest } from '../types/wke';
 
@@ -52,7 +52,9 @@ export interface RunContext {
   k_um_inv: Float64Array;
   scales: WKEResult['scales'];
   nSteps: number;
-  snapshotIntervalTau: number;
+  /** absolute dimensionless time at the end of the run so far, and the lattice stride there */
+  tauEnd: number;
+  latticeStride: number;
   nEvents: number;
 }
 
@@ -66,12 +68,13 @@ function liveAdapter(
   if (!onProgress) return undefined;
   const kernel = MODEL_BY_ID[request.model].allowsQuantum ? request.kernel : 'classical';
   const grid = Array.from(k_um_inv);
-  return (snapshot: Snapshot) => onProgress({
+  return (snapshot: Snapshot, stride: number) => onProgress({
     type: 'live', runId, runKey: runKeyOf(request.model, kernel, request.accuracy),
-    continuation, model: request.model, kernel, components: request.components,
+    continuation, model: request.model, kernel,
     k_um_inv: grid, kp0_um_inv: kp0, stopKpFraction,
     density_um3: request.density_um3,
-    snapshot: { ...snapshot, q: Array.from(snapshot.q) },
+    snapshot: { ...snapshot, q: Array.from(snapshot.q), mHist: snapshot.mHist ?? undefined },
+    stride,
   });
 }
 
@@ -96,7 +99,6 @@ function packResult(
     model: req.model,
     kernel,
     accuracy: req.accuracy,
-    components: req.components,
     continuation,
     k_um_inv: Array.from(k_um_inv),
     kp0_um_inv: kp0,
@@ -114,7 +116,11 @@ function packResult(
       dN_over_N: s.dN_over_N,
       dE_over_E: s.dE_over_E,
       stage: s.stage,
+      lattice: s.lattice,
+      loop: s.loop,
+      mHist: s.mHist ?? undefined,
     })),
+    latticeStride: res.latticeStride,
     kpTrack: { t_s: res.kpTrack.t_s, kp: res.kpTrack.kp, loop: res.kpTrack.loop, pole: res.kpTrack.pole },
     evalTrack: { t_s: res.evalTrack.t_s, kp: res.evalTrack.kp },
     scales,
@@ -172,7 +178,7 @@ export async function runSimulation(
   const f0 = buildInitialF(normalizeQ(qOnSolver, k_um_inv), k_um_inv, req.density_um3);
   const kp0 = peakMomentumFromF(k_um_inv, f0);
 
-  const t0_s = sc.t0_s * clockFactor(req.model, req.components);
+  const t0_s = sc.t0_s;
   const scales: WKEResult['scales'] = {
     xi_um: sc.xi_um, t0_s, ncal: sc.ncal, na_um2: sc.na_um2, density_um3: req.density_um3, sign: sc.sign,
   };
@@ -214,7 +220,8 @@ export async function runSimulation(
       k_um_inv,
       scales,
       nSteps: Math.max(res.nSteps, 50),
-      snapshotIntervalTau: req.tauMax / req.nSnapshots,
+      tauEnd: res.finalTau,
+      latticeStride: res.latticeStride,
       nEvents: setup.nEvents,
     },
   };
@@ -246,7 +253,7 @@ export async function continueSimulation(
     haltOnHalf: !req.alreadyReachedTarget,
     stopKpFraction: req.stopKpFraction,
     nSnapshots: req.nSnapshots,
-    snapshotIntervalTau: ctx.snapshotIntervalTau,
+    lattice: { offsetTau: ctx.tauEnd, stride: ctx.latticeStride },
     maxSteps: ctx.nSteps,
     onProgress: progressAdapter(req.runId, onProgress, ctx.scales.t0_s, wall0),
     onLive: liveAdapter(req.runId, ctx.request, true, ctx.k_um_inv, req.kp0_um_inv, req.stopKpFraction, onProgress),
@@ -256,5 +263,8 @@ export async function continueSimulation(
     req.runId, ctx.request, true, res, ctx.k_um_inv, req.kp0_um_inv, req.stopKpFraction, ctx.scales,
     setup, backend.threads, 1,
   );
-  return { result, context: { ...ctx, finalF: res.finalF } };
+  return {
+    result,
+    context: { ...ctx, finalF: res.finalF, tauEnd: ctx.tauEnd + res.finalTau, latticeStride: res.latticeStride },
+  };
 }

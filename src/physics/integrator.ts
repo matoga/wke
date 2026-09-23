@@ -23,6 +23,15 @@ const E1 = 71 / 57600, E3 = -71 / 16695, E4 = 71 / 1920,
 
 export interface Snapshot {
   tau: number;
+  /**
+   * Index on the absolute sampling lattice, in units of LATTICE_UNIT of
+   * absolute dimensionless time; absent for event states (stage crossings,
+   * the final state).
+   */
+  lattice?: number;
+  /** collision-weighted loop dressing and rate-weighted histogram of M at this state's step */
+  loop?: number;
+  mHist?: number[] | null;
   t_s: number;
   kp_um_inv: number;
   /** q(k, t) = k² f / (2π² n₀), normalized so ∫ q dk = 1 at t = 0 */
@@ -36,6 +45,8 @@ export interface Snapshot {
 export interface IntegrationResult {
   termination: Termination;
   terminationMessage: string | null;
+  /** lattice stride at the end of the run (see LATTICE_UNIT) */
+  latticeStride: number;
   reachedTarget: boolean;
   tauTarget: number | null;
   dtTarget_s: number | null;
@@ -75,8 +86,14 @@ export interface IntegrationConfig {
   atol?: number;
   /** number of evenly spaced snapshots saved for the timeline slider */
   nSnapshots?: number;
-  /** spacing of timeline snapshots in dimensionless time; defaults to tauMax / nSnapshots */
+  /** unused; kept for callers that still pass it */
   snapshotIntervalTau?: number;
+  /**
+   * Absolute sampling lattice. Saved states sit at multiples of
+   * stride × LATTICE_UNIT of absolute time offsetTau + τ; a continuation
+   * passes the previous segment's end and stride so both share one lattice.
+   */
+  lattice?: { offsetTau: number; stride: number };
   /** accepted-step budget; defaults to the global safety limit */
   maxSteps?: number;
   /**
@@ -95,13 +112,18 @@ export interface IntegrationConfig {
   tauEval?: ArrayLike<number>;
   onProgress?: (info: { pct: number; tau: number; kp: number; nSteps: number; nRhs: number; diag: RhsDiagnostics }) => void;
   /** Copies of accepted states for the UI; never used by the solver. */
-  onLive?: (snapshot: Snapshot) => void;
+  onLive?: (snapshot: Snapshot, stride: number) => void;
   shouldStop?: () => boolean;
   /** peak-estimator depth (see PEAK_DEPTH); 0 is the three-point parabola */
   peakDepth?: number;
   /** minimum wall time between progress callbacks (ms) */
   progressInterval_ms?: number;
 }
+
+/** Lattice unit of absolute dimensionless time; strides are powers of two times this. */
+export const LATTICE_UNIT = 2 ** -30;
+/** The lattice stride doubles whenever more than this many samples would cover the run. */
+export const LATTICE_MAX = 256;
 
 const STAGE_FRACTIONS: Array<[number, string]> = [
   [0.9, '0.90'],
@@ -162,6 +184,7 @@ export async function runWKE(config: IntegrationConfig): Promise<IntegrationResu
     rhs: rhsFn, grid: p, gridWeights: wq, t0_s, xi_um, kp0_um_inv, f0, tauMax,
     rtol = 1e-7, atol = 1e-10, nSnapshots = 40, snapshotIntervalTau,
     maxSteps = 200000, tauEval, onProgress, onLive, shouldStop, progressInterval_ms = 150,
+    lattice = { offsetTau: 0, stride: 1 },
     haltOnHalf = true, stopKpFraction = 0.5, peakDepth = PEAK_DEPTH,
   } = config;
 
@@ -202,7 +225,6 @@ export async function runWKE(config: IntegrationConfig): Promise<IntegrationResu
   const kpOf = (f: Float64Array) => peakMomentumFromF(k_um_inv, f, peakDepth);
 
   const snapshots: Snapshot[] = [];
-  const liveSnapshots: Snapshot[] = [];
   const kpTrack = {
     tau: [] as number[], t_s: [] as number[], kp: [] as number[], loop: [] as number[], pole: [] as number[],
   };
@@ -211,6 +233,9 @@ export async function runWKE(config: IntegrationConfig): Promise<IntegrationResu
   let maxDN = 0;
   let maxDE = 0;
 
+  // Diagnostics of the step a saved state belongs to (the right-hand side at
+  // the end of that step), attached to the state for display.
+  let snapDiag: RhsDiagnostics | null = null;
   const makeSnapshot = (t: number, f: Float64Array, stage: string, trackDrift = true): Snapshot => {
     const q = new Float64Array(n);
     for (let i = 0; i < n; i++) {
@@ -222,38 +247,32 @@ export async function runWKE(config: IntegrationConfig): Promise<IntegrationResu
       maxDN = Math.max(maxDN, Math.abs(dN));
       maxDE = Math.max(maxDE, Math.abs(dE));
     }
-    return { tau: t, t_s: t * t0_s, kp_um_inv: kpOf(f), q, dN_over_N: dN, dE_over_E: dE, stage };
+    return {
+      tau: t, t_s: t * t0_s, kp_um_inv: kpOf(f), q, dN_over_N: dN, dE_over_E: dE, stage,
+      loop: snapDiag?.loopDressing, mHist: snapDiag?.mHist,
+    };
   };
 
-  snapshots.push(makeSnapshot(0, y, 'initial'));
-  onLive?.(snapshots[0]);
+  const offsetTau = lattice.offsetTau;
+  let stride = lattice.stride;
+  const first = makeSnapshot(0, y, 'initial');
+  if (offsetTau === 0) first.lattice = 0;
+  snapshots.push(first);
 
-  const timelineTargets: Array<{ target: number; label: string; done: boolean }> = [];
-  if (haltOnHalf && nSnapshots > 2) {
-    for (let i = 1; i < nSnapshots - 2; i++) {
-      timelineTargets.push({
-        target: kp0_um_inv * (1 - (1 - stopKpFraction) * i / (nSnapshots - 1)),
-        label: 'sample', done: false,
-      });
-    }
-    for (const [fraction, label] of STAGE_FRACTIONS) {
-      if (Math.abs(fraction - stopKpFraction) < 1e-12) {
-        timelineTargets.push({ target: stopKpFraction * kp0_um_inv, label, done: false });
-        continue;
-      }
-      if (fraction < stopKpFraction) continue;
-      const nearest = timelineTargets.reduce((best, item, index) =>
-        Math.abs(item.target - fraction * kp0_um_inv) < Math.abs(timelineTargets[best].target - fraction * kp0_um_inv) ? index : best, 0);
-      timelineTargets[nearest] = { target: fraction * kp0_um_inv, label, done: false };
-    }
-    if (!STAGE_FRACTIONS.some(([fraction]) => Math.abs(fraction - stopKpFraction) < 1e-12)) {
-      timelineTargets.push({ target: stopKpFraction * kp0_um_inv, label: stopKpFraction.toFixed(3), done: false });
-    }
-    timelineTargets.sort((a, b) => b.target - a.target);
+  const stageFractions = STAGE_FRACTIONS.filter(([frac]) => frac > stopKpFraction - 1e-12);
+  if (!stageFractions.some(([frac]) => Math.abs(frac - stopKpFraction) < 1e-12)) {
+    stageFractions.push([stopKpFraction, stopKpFraction.toFixed(3)]);
   }
+  const pendingStages = haltOnHalf
+    ? stageFractions.map(([frac, label]) => ({ target: frac * kp0_um_inv, label, done: false }))
+    : [];
 
   // Initial step size: a small fraction of the expected timescale.
   let diag = await rhs(y, k1);
+  snapDiag = diag;
+  first.loop = diag.loopDressing;
+  first.mHist = diag.mHist;
+  onLive?.(first, stride);
   kpTrack.tau.push(0); kpTrack.t_s.push(0); kpTrack.kp.push(kpOf(y));
   kpTrack.loop.push(diag.loopDressing); kpTrack.pole.push(diag.poleIndicator);
   let termination: Termination | null = null;
@@ -283,12 +302,9 @@ export async function runWKE(config: IntegrationConfig): Promise<IntegrationResu
   let halfStateF: Float64Array | null = null;
   let kpPrev = kpOf(y);
 
-  // Relaxation runs sample evenly across the peak's drop to the stop target.
-  // Continuations retain uniform-in-time sampling from their saved interval.
-  const sampleInterval = snapshotIntervalTau ?? tauMax / nSnapshots;
-  let nextSampleTau = Number.isFinite(sampleInterval) && sampleInterval > 0
-    ? sampleInterval
-    : Infinity;
+  // States are saved on an absolute lattice so every segment of a run, and
+  // the live view, hold the same frames.
+  void nSnapshots; void snapshotIntervalTau;
 
   while (termination === null && tau < tauMax && nSteps < maxSteps && !(haltOnHalf && reachedHalf)) {
     if (shouldStop?.()) { termination = 'stopped'; break; }
@@ -339,6 +355,7 @@ export async function runWKE(config: IntegrationConfig): Promise<IntegrationResu
 
     const tauNew = tau + h;
     const kpNew = kpOf(yTmp);
+    snapDiag = diagNew;
 
     // --- terminal event: kp crosses kp0/2 downwards ---
     if (haltOnHalf && kpPrev > halfTarget && kpNew <= halfTarget) {
@@ -350,14 +367,13 @@ export async function runWKE(config: IntegrationConfig): Promise<IntegrationResu
     }
 
     // --- stage crossings, located the same way ---
-    if (haltOnHalf) {
-      for (const sample of timelineTargets) {
-        if (!sample.done && kpPrev > sample.target && kpNew <= sample.target) {
-          const tc = bisectEvent(y, yTmp, k1, k7, tau, h, kpOf, sample.target, n);
-          const fc = hermite(y, yTmp, k1, k7, tau, h, tc, n);
-          snapshots.push(makeSnapshot(tc, fc, sample.label));
-          sample.done = true;
-        }
+    for (const st of pendingStages) {
+      if (!st.done && kpPrev > st.target && kpNew <= st.target) {
+        const tc = bisectEvent(y, yTmp, k1, k7, tau, h, kpOf, st.target, n);
+        const snap = makeSnapshot(tc, hermite(y, yTmp, k1, k7, tau, h, tc, n), st.label);
+        snapshots.push(snap);
+        onLive?.(snap, stride);
+        st.done = true;
       }
     }
 
@@ -375,15 +391,30 @@ export async function runWKE(config: IntegrationConfig): Promise<IntegrationResu
       }
     }
 
-    // --- evenly spaced timeline samples, evaluated on dense output ---
-    // If this step contains the terminal half-time event, do not save states
-    // beyond that event: the final snapshot below is the exact half-time state.
+    // --- lattice samples, evaluated on dense output ---
+    // If this step contains the terminal event, stop at it: the final state
+    // below is the exact event state.
     const sampleEnd = reachedHalf && tauHalf !== null ? tauHalf : tauNew;
-    if (!haltOnHalf) {
-      while (nextSampleTau <= sampleEnd + 1e-15) {
-        const fs = hermite(y, yTmp, k1, k7, tau, h, nextSampleTau, n);
-        snapshots.push(makeSnapshot(nextSampleTau, fs, 'sample'));
-        nextSampleTau += sampleInterval;
+    {
+      const absEnd = offsetTau + sampleEnd;
+      let dt = stride * LATTICE_UNIT;
+      if (absEnd / dt > LATTICE_MAX) {
+        while (absEnd / dt > LATTICE_MAX) { stride *= 2; dt *= 2; }
+        for (let i = snapshots.length - 1; i >= 0; i--) {
+          const idx = snapshots[i].lattice;
+          if (idx !== undefined && idx % stride !== 0) snapshots.splice(i, 1);
+        }
+      }
+      let m = Math.floor((offsetTau + tau) / dt + 1e-9) + 1;
+      while (m * dt - offsetTau <= sampleEnd * (1 + 1e-14)) {
+        const tl = m * dt - offsetTau;
+        if (tl > tau) {
+          const snap = makeSnapshot(tl, hermite(y, yTmp, k1, k7, tau, h, tl, n), 'sample');
+          snap.lattice = m * stride;
+          snapshots.push(snap);
+          onLive?.(snap, stride);
+        }
+        m++;
       }
     }
 
@@ -413,14 +444,6 @@ export async function runWKE(config: IntegrationConfig): Promise<IntegrationResu
           ? Math.min(1, Math.max(0, (kp0_um_inv - kpNew) / (kp0_um_inv - halfTarget)))
           : Math.min(1, nSteps / maxSteps);
         onProgress({ pct, tau, kp: kpNew, nSteps, nRhs, diag });
-        if (onLive) {
-          const live = makeSnapshot(tau, y, 'live', false);
-          onLive(live);
-          liveSnapshots.push(live);
-          if (liveSnapshots.length > 160) {
-            liveSnapshots.splice(0, liveSnapshots.length, ...liveSnapshots.filter((_, i) => i % 2 === 0));
-          }
-        }
         // Let the worker receive Stop even when the RHS falls back to a local,
         // synchronous implementation whose awaited calls only yield microtasks.
         if (shouldStop) await new Promise<void>((resolve) => setTimeout(resolve, 0));
@@ -442,11 +465,9 @@ export async function runWKE(config: IntegrationConfig): Promise<IntegrationResu
     snapshots.push(makeSnapshot(tau, y, 'final'));
   }
 
-  if (termination === 'stopped') snapshots.push(...liveSnapshots);
-
   // Snapshots may be produced slightly out of order across stage/sample paths.
   snapshots.sort((a, b) => a.tau - b.tau);
-  onLive?.(snapshots[snapshots.length - 1]);
+  onLive?.(snapshots[snapshots.length - 1], stride);
 
   if (termination === null) {
     if (haltOnHalf && reachedHalf) termination = 'target';
@@ -457,6 +478,7 @@ export async function runWKE(config: IntegrationConfig): Promise<IntegrationResu
   return {
     termination,
     terminationMessage,
+    latticeStride: stride,
     reachedTarget: reachedHalf,
     tauTarget: tauHalf,
     dtTarget_s: tauHalf !== null ? tauHalf * t0_s : null,

@@ -330,3 +330,29 @@ tr.stale td { color: var(--faint); }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
+.subpanel { display: grid; gap: 6px; border-top: 1px solid var(--line); padding-top: 10px; }
+.kv.now { border-top: 1px solid var(--line); padding-top: 8px; }
+.kv .kv-head { color: var(--ink); font-weight: 500; }
+
+/* Matches the segmented switches it sits beside: same height, font, border and fill. */
+.curves-select {
+  appearance: none;
+  -webkit-appearance: none;
+  font: 500 12.5px/1 var(--sans);
+  color: var(--ink);
+  background-color: var(--chip);
+  background-image:
+    linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: calc(100% - 13px) 50%, calc(100% - 9px) 50%;
+  background-size: 4px 4px, 4px 4px;
+  background-repeat: no-repeat;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 7px 24px 7px 10px;
+  height: auto;
+  cursor: pointer;
+}
+.curves-select:hover { border-color: var(--faint); }
+input[type="range"]:disabled { opacity: 0.45; cursor: not-allowed; }
+.timeline-mark:disabled { opacity: 0.45; cursor: not-allowed; }

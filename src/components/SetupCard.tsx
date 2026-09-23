@@ -32,7 +32,7 @@ export function SetupCard({
   lastRuns: Partial<Record<ModelId, RunRecord>>;
 }) {
   const bare = settings.model === 'bare';
-  const stopInvalid = !(settings.stopKpFraction > 0.05 && settings.stopKpFraction < 0.99);
+  const stopInvalid = !(settings.stopKpFraction >= 0.01 && settings.stopKpFraction < 0.99);
   return (
     <Card label="Setup" ariaLabel="Model and parameters">
       <div className="models" role="group" aria-label="Kinetic model">
@@ -71,15 +71,6 @@ export function SetupCard({
         {!bare && <span className="hint">Loop models use classical wave statistics.</span>}
       </div>
 
-      {settings.model === 'large-n' && (
-        <div className="inputs">
-          <Field label="Components N" unit="clock t → 2N t">
-            <NumberInput value={settings.components} min={1} step={1}
-              onChange={(v) => onSettings({ components: Math.max(1, Math.round(v ?? 1)) })} />
-          </Field>
-        </div>
-      )}
-
       <div className="field accuracy-field">
         <span className="label">Accuracy</span>
         <Segmented
@@ -97,7 +88,7 @@ export function SetupCard({
 
       <div className="inputs">
         <Field label={<>Stop at <Tex math="k_p/k_{p,0}" /></>}>
-          <NumberInput value={settings.stopKpFraction} step={0.05} min={0.05} max={0.99} invalid={stopInvalid}
+          <NumberInput value={settings.stopKpFraction} step={0.05} min={0.01} max={0.99} invalid={stopInvalid}
             onChange={(v) => onSettings({ stopKpFraction: v ?? 0.5 })} />
         </Field>
         <label className="check" style={{ alignSelf: 'end', paddingBottom: 8 }}>

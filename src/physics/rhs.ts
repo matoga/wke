@@ -24,6 +24,39 @@ export interface RhsDiagnostics {
   poleIndicator: number;
   /** non-null when the model left its domain of validity; the run stops */
   stop: string | null;
+  /**
+   * Distribution of the dressing M over the collisions, weighted by their
+   * rate w|g − l| and normalised to 1, on the bins M_EDGES; null for bare.
+   */
+  mHist: number[] | null;
+}
+
+/**
+ * Bins of the dressing histogram: 0.025 wide on the core range [−0.1, 2.1],
+ * then 40 bins per octave out to [−16.1, 32.1]. M outside is clamped to the
+ * end bins.
+ */
+const M_SEGMENTS: Array<[number, number, number]> = [
+  [-16.1, -8.1, 40], [-8.1, -4.1, 40], [-4.1, -2.1, 40], [-2.1, -1.1, 40], [-1.1, -0.1, 40],
+  [-0.1, 2.1, 88],
+  [2.1, 4.1, 40], [4.1, 8.1, 40], [8.1, 16.1, 40], [16.1, 32.1, 40],
+];
+const M_SEG_OFFSET = M_SEGMENTS.reduce<number[]>((acc, [, , n], i) => { acc.push(i === 0 ? 0 : acc[i - 1] + M_SEGMENTS[i - 1][2]); return acc; }, []);
+export const M_EDGES: number[] = (() => {
+  const e: number[] = [M_SEGMENTS[0][0]];
+  for (const [a, b, n] of M_SEGMENTS) for (let i = 1; i <= n; i++) e.push(a + ((b - a) * i) / n);
+  return e;
+})();
+export const M_BINS = M_EDGES.length - 1;
+
+/** Histogram bin of a dressing value M. */
+export function mBin(M: number): number {
+  if (!(M > M_SEGMENTS[0][0])) return 0;
+  for (let s = 0; s < M_SEGMENTS.length; s++) {
+    const [a, b, n] = M_SEGMENTS[s];
+    if (M < b) return M_SEG_OFFSET[s] + Math.min(n - 1, Math.floor(((M - a) / (b - a)) * n));
+  }
+  return M_BINS - 1;
 }
 
 export type RhsFunction = (f: Float64Array, out: Float64Array) => RhsDiagnostics | Promise<RhsDiagnostics>;
@@ -43,6 +76,8 @@ export interface RhsPartial {
   mMin: number;
   /** min |1 − cL|² over the channel tables */
   dMin: number;
+  /** unnormalised rate-weighted histogram of M, or null */
+  hist: Float64Array | null;
 }
 
 export type PartialRhs = (f: Float64Array, out: Float64Array) => RhsPartial;
@@ -50,7 +85,7 @@ export type PartialRhs = (f: Float64Array, out: Float64Array) => RhsPartial;
 export type RhsKind = 'bare' | 'one-loop' | 'resummed';
 
 export function emptyPartial(): RhsPartial {
-  return { num: 0, den: 0, negW: 0, mMin: Infinity, dMin: Infinity };
+  return { num: 0, den: 0, negW: 0, mMin: Infinity, dMin: Infinity, hist: null };
 }
 
 export function combinePartials(a: RhsPartial, b: RhsPartial): RhsPartial {
@@ -60,6 +95,7 @@ export function combinePartials(a: RhsPartial, b: RhsPartial): RhsPartial {
     negW: a.negW + b.negW,
     mMin: Math.min(a.mMin, b.mMin),
     dMin: Math.min(a.dMin, b.dMin),
+    hist: a.hist && b.hist ? a.hist.map((v, i) => v + b.hist![i]) : (a.hist ?? b.hist),
   };
 }
 
@@ -69,12 +105,16 @@ export const POLE_WEIGHT_LIMIT = 10;
 export const NEGATIVE_WEIGHT_LIMIT = 1e-3;
 
 export function finalizeDiagnostics(kind: RhsKind, rung: number, part: RhsPartial): RhsDiagnostics {
-  if (kind === 'bare') return { loopDressing: 0, poleIndicator: NaN, stop: null };
+  if (kind === 'bare') return { loopDressing: 0, poleIndicator: NaN, stop: null, mHist: null };
   const loopDressing = part.den > 0 ? part.num / part.den : 0;
+  let total = 0;
+  if (part.hist) for (const v of part.hist) total += v;
+  const mHist = part.hist && total > 0 ? Array.from(part.hist, (v) => v / total) : null;
   if (kind === 'one-loop') {
     const frac = part.den > 0 ? part.negW / part.den : 0;
     return {
       loopDressing,
+      mHist,
       poleIndicator: part.mMin,
       stop: frac > NEGATIVE_WEIGHT_LIMIT
         ? `The one-loop bracket turned negative on ${(100 * frac).toFixed(1)}% of the collision weight: perturbation theory has broken down.`
@@ -84,6 +124,7 @@ export function finalizeDiagnostics(kind: RhsKind, rung: number, part: RhsPartia
   const w = 1 / part.dMin;
   return {
     loopDressing,
+    mHist,
     poleIndicator: w,
     stop: w >= POLE_WEIGHT_LIMIT
       ? `The resummed vertex approached its pole: 1/|1 − ${rung === 1 ? '' : rung}L₋|² reached ${w.toFixed(1)}.`
@@ -190,6 +231,7 @@ export function makeLoopPartial(o: LoopRhsOptions): PartialRhs {
 
     // event sweep
     let num = 0, den = 0, negW = 0, mMin = Infinity;
+    const hist = new Float64Array(M_BINS);
     for (let i = 0; i < n; i++) {
       const p = grid[i];
       const pSq = p * p;
@@ -249,11 +291,12 @@ export function makeLoopPartial(o: LoopRhsOptions): PartialRhs {
           den += aw;
           if (M < 0) negW += aw;
           if (aw > 0 && M < mMin) mMin = M;
+          hist[mBin(M)] += aw;
         }
       }
       out[i] = scale * (sg - sl);
     }
 
-    return { num, den, negW, mMin, dMin };
+    return { num, den, negW, mMin, dMin, hist };
   };
 }

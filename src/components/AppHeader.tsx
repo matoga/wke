@@ -20,7 +20,7 @@ export function AppHeader() {
         <h1>Bose Gas Kinetics</h1>
         <p className="lede">
           Solve the isotropic <b>wave kinetic equation</b> of a three-dimensional Bose gas from any momentum spectrum, and
-          compare the bare equation with <b>loop-renormalised</b> kinetics: one loop, bubble chains and large N. Every
+          compare the bare equation with <b>loop-renormalised</b> kinetics of a one-component gas: one loop and bubble-chain resummations. Every
           number is computed in your browser.
         </p>
       </div>

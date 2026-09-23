@@ -20,7 +20,6 @@ export interface RunSetup {
   a_a0: number;
   speciesKey: string;
   stopKpFraction: number;
-  components: number;
 }
 
 export interface ConvergenceCheck {
@@ -44,7 +43,6 @@ export interface LiveRun {
   runKey: string;
   model: WKELive['model'];
   kernel: WKELive['kernel'];
-  components: number;
   k_um_inv: number[];
   kp0_um_inv: number;
   stopKpFraction: number;
@@ -85,6 +83,11 @@ const IDLE: RunProgress = { running: false, label: '', phase: '', pct: 0, queued
 const NSNAPSHOTS = 50;
 const TAU_MAX = 1e6;
 
+/** Keep event states and the lattice states that the current stride divides. */
+export function onLattice(snaps: WKESnapshot[], stride: number): WKESnapshot[] {
+  return snaps.filter((s) => s.lattice === undefined || s.lattice % stride === 0);
+}
+
 /** Append a continuation segment onto a finished run. */
 function mergeContinuation(prior: WKEResult, seg: WKEResult): WKEResult {
   const offsetTau = prior.snapshots.at(-1)?.tau ?? 0;
@@ -103,7 +106,8 @@ function mergeContinuation(prior: WKEResult, seg: WKEResult): WKEResult {
     dtTarget_s: prior.reachedTarget ? prior.dtTarget_s : seg.reachedTarget ? (seg.dtTarget_s ?? 0) + offsetT : null,
     termination: seg.termination === 'steps' && reached ? 'target' : seg.termination,
     terminationMessage: seg.terminationMessage,
-    snapshots: [...prior.snapshots, ...snapshots],
+    snapshots: onLattice([...prior.snapshots, ...snapshots], seg.latticeStride),
+    latticeStride: seg.latticeStride,
     kpTrack: {
       t_s: [...prior.kpTrack.t_s, ...seg.kpTrack.t_s.slice(1).map((t) => t + offsetT)],
       kp: [...prior.kpTrack.kp, ...seg.kpTrack.kp.slice(1)],
@@ -178,7 +182,6 @@ export function useRunLibrary(setup: RunSetup | null) {
       model: job.model,
       kernel: job.kernel,
       accuracy: job.accuracy,
-      components: s.components,
       q: s.q,
       density_um3: s.density_um3,
       a_a0: s.a_a0,
@@ -230,14 +233,12 @@ export function useRunLibrary(setup: RunSetup | null) {
             stage: msg.continuation && msg.snapshot.stage === 'initial' ? 'continued' : msg.snapshot.stage };
           const first = prev?.sourceRunId === msg.runId ? prev : {
             sourceRunId: msg.runId, runId: prior?.runId ?? msg.runId, runKey: msg.runKey,
-            model: msg.model, kernel: msg.kernel, components: msg.components,
+            model: msg.model, kernel: msg.kernel, 
             k_um_inv: msg.k_um_inv, kp0_um_inv: msg.kp0_um_inv,
             stopKpFraction: msg.stopKpFraction, scales: { density_um3: msg.density_um3 },
             snapshots: prior?.snapshots ?? [],
           };
-          const snapshots = [...first.snapshots, snapshot];
-          return { ...first, snapshots: snapshots.length <= 160 ? snapshots
-            : [snapshots[0], ...snapshots.slice(1).filter((_, i) => i % 2 === 0)] };
+          return { ...first, snapshots: onLattice([...first.snapshots, snapshot], msg.stride) };
         });
         return;
       }
@@ -315,7 +316,11 @@ export function useRunLibrary(setup: RunSetup | null) {
     queueRef.current = [];
     const targetFrac = setupRef.current?.stopKpFraction ?? rec.result.stopKpFraction;
     const currentKp = rec.result.snapshots.at(-1)?.kp_um_inv ?? rec.result.kp0_um_inv;
-    const reachedNewTarget = currentKp <= targetFrac * rec.result.kp0_um_inv;
+    // The last state of a finished run sits exactly on its target, so compare
+    // with a tolerance; otherwise the continuation re-detects the same crossing
+    // on its first step and stops at once.
+    const reachedNewTarget = (rec.result.reachedTarget && targetFrac >= rec.result.stopKpFraction - 1e-12)
+      || currentKp <= targetFrac * rec.result.kp0_um_inv * (1 + 1e-6);
     const req: WKEContinueRequest = {
       type: 'continue',
       runId: id,

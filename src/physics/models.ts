@@ -3,9 +3,9 @@
  * tree-level rate; they differ in how each collision is dressed by loops.
  */
 
-export type ModelId = 'bare' | 'one-loop' | 'chain' | 'large-n' | 'heuristic';
+export type ModelId = 'bare' | 'one-loop' | 'chain' | 'heuristic';
 
-/** Right-hand side actually integrated: 'large-n' runs 'chain' on a slower clock. */
+/** Right-hand side integrated for each model. */
 export type SolverModel = 'bare' | 'one-loop' | 'chain' | 'heuristic';
 
 export interface ModelInfo {
@@ -55,16 +55,6 @@ export const MODELS: ModelInfo[] = [
     allowsQuantum: false,
   },
   {
-    id: 'large-n',
-    label: 'O(N) model, large N',
-    short: 'O(N)',
-    bracket: 'M = \\left\\langle \\dfrac{1}{|1 - L_-|^2} \\right\\rangle_t,\\quad t \\to 2N\\,t',
-    blurb: 'The N-component vector model at leading order in 1/N: the bubble-chain dynamics on a clock slowed by 2N.',
-    solver: 'chain',
-    hasPole: true,
-    allowsQuantum: false,
-  },
-  {
     id: 'heuristic',
     label: 'Heuristic resummation, N = 1',
     short: 'Heuristic',
@@ -79,8 +69,3 @@ export const MODELS: ModelInfo[] = [
 export const MODEL_BY_ID: Record<ModelId, ModelInfo> = Object.fromEntries(
   MODELS.map((m) => [m.id, m]),
 ) as Record<ModelId, ModelInfo>;
-
-/** Time rescaling of the physical clock relative to the integrated model. */
-export function clockFactor(model: ModelId, components: number): number {
-  return model === 'large-n' ? 2 * Math.max(1, components) : 1;
-}
