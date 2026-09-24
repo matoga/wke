@@ -386,7 +386,7 @@ section('Accuracy levels (full pipeline, bare classical)');
   const request = (accuracy: WKERunRequest['accuracy'], a_a0: number): WKERunRequest => ({
     type: 'run', runId: 't', model: 'bare', kernel: 'classical', accuracy,
     q: Array.from(interpolateQ(gaussian.raw_k, gaussian.raw_q, INPUT_GRID)),
-    density_um3: META.density_um3, a_a0, speciesKey: 'K39', stopKpFraction: 0.5, tauMax: 4000, nSnapshots: 40,
+    density_um3: META.density_um3, a_a0, speciesKey: 'K39', stopKpFraction: 0.5, stopAtBreakdown: true, tauMax: 4000, nSnapshots: 40,
   });
   const backend = localBackend();
   const draft = (await runSimulation(request('draft', 50), backend)).result;

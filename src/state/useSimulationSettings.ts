@@ -12,6 +12,8 @@ export interface SimulationSettings {
   accuracy: AccuracyLevel;
   stopKpFraction: number;
   checkConvergence: boolean;
+  /** stop runs when the model leaves its range of validity */
+  stopAtBreakdown: boolean;
 }
 
 export const DEFAULT_SETTINGS: SimulationSettings = {
@@ -20,6 +22,7 @@ export const DEFAULT_SETTINGS: SimulationSettings = {
   accuracy: 'standard',
   stopKpFraction: 0.5,
   checkConvergence: false,
+  stopAtBreakdown: false,
 };
 
 const isSettings = (v: unknown): v is SimulationSettings =>
@@ -29,7 +32,7 @@ const isSettings = (v: unknown): v is SimulationSettings =>
   && typeof v.stopKpFraction === 'number' && v.stopKpFraction > 0 && v.stopKpFraction < 1;
 
 export function useSimulationSettings() {
-  const [settings, setSettings] = useState<SimulationSettings>(() => load('settings', DEFAULT_SETTINGS, isSettings));
+  const [settings, setSettings] = useState<SimulationSettings>(() => ({ ...DEFAULT_SETTINGS, ...load('settings', DEFAULT_SETTINGS, isSettings) }));
   useEffect(() => { save('settings', settings); }, [settings]);
   const update = (patch: Partial<SimulationSettings>) => setSettings((prev) => ({ ...prev, ...patch }));
   /** Bose +1 statistics only exist for the bare equation. */

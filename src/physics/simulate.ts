@@ -121,6 +121,7 @@ function packResult(
       mHist: s.mHist ?? undefined,
     })),
     latticeStride: res.latticeStride,
+    breakdown: res.breakdown ? { t_s: res.breakdown.t_s, message: res.breakdown.message } : null,
     kpTrack: { t_s: res.kpTrack.t_s, kp: res.kpTrack.kp, loop: res.kpTrack.loop, pole: res.kpTrack.pole },
     evalTrack: { t_s: res.evalTrack.t_s, kp: res.evalTrack.kp },
     scales,
@@ -206,6 +207,7 @@ export async function runSimulation(
     onProgress: progressAdapter(req.runId, onProgress, t0_s, wall0),
     onLive: liveAdapter(req.runId, req, false, k_um_inv, kp0, req.stopKpFraction, onProgress),
     shouldStop,
+    stopAtBreakdown: req.stopAtBreakdown ?? true,
   });
 
   const result = packResult(req.runId, req, false, res, k_um_inv, kp0, req.stopKpFraction, scales, setup, backend.threads, gridCoverage);
@@ -258,6 +260,7 @@ export async function continueSimulation(
     onProgress: progressAdapter(req.runId, onProgress, ctx.scales.t0_s, wall0),
     onLive: liveAdapter(req.runId, ctx.request, true, ctx.k_um_inv, req.kp0_um_inv, req.stopKpFraction, onProgress),
     shouldStop,
+    stopAtBreakdown: ctx.request.stopAtBreakdown ?? true,
   });
   const result = packResult(
     req.runId, ctx.request, true, res, ctx.k_um_inv, req.kp0_um_inv, req.stopKpFraction, ctx.scales,

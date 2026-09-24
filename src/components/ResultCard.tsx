@@ -47,7 +47,9 @@ export function ResultCard({
   onCancel: () => void;
   onStopAndReset: () => void;
 }) {
-  const r = record?.result ?? null;
+  // While a new run (or a continuation) is computing, the previous result no longer describes what is shown.
+  const superseded = progress.running && progress.purpose !== 'check';
+  const r = superseded ? null : record?.result ?? null;
   const frameView = frame ? (() => {
     const { snap, k } = frame;
     const e = Float64Array.from(snap.q, (v, i) => v * k[i] * k[i]);
@@ -100,12 +102,14 @@ export function ResultCard({
           Time for <Tex math="k_p" /> to fall to {settings.stopKpFraction} <Tex math="k_{p,0}" />
         </span>
         <div className="hero-num" aria-live="polite">
-          {r && r.dtTarget_s != null ? t.value : r ? 'not reached' : 'n/a'}
+          {superseded ? <span className="pending">running</span> : r && r.dtTarget_s != null ? t.value : r ? 'not reached' : 'n/a'}
           {r && r.dtTarget_s != null && <small>{t.unit}</small>}
-          {pm != null && <span className="pm">± {pct(pm, 2)}</span>}
+          {pm != null && r && <span className="pm">± {pct(pm, 2)}</span>}
         </div>
         <div className="hero-sub">
-          {r ? (
+          {superseded ? (
+            <><b>{progress.label.split(' · ')[0]}</b> · {progress.phase === 'setup' ? 'building tables' : progress.t_s != null ? <>reached <Tex math="t" /> = {timeText(progress.t_s)}</> : 'starting'}</>
+          ) : r ? (
             <><b>{MODEL_BY_ID[r.model].label}</b>{r.kernel === 'quantum' ? ', Bose +1 statistics' : ''} · {PRECISION[r.accuracy].label} accuracy</>
           ) : 'Run a model to measure the relaxation time.'}
         </div>
@@ -117,6 +121,12 @@ export function ResultCard({
         </div>
       )}
       {r?.terminationMessage && <div className="notice bad">{r.terminationMessage}</div>}
+      {r?.breakdown && !r.terminationMessage && (
+        <div className="notice">
+          From t = {timeText(r.breakdown.t_s)} the model is outside its controlled range: {r.breakdown.message.replace(/\.$/, '')}.
+          The run went on because stopping at breakdown is off; treat later results as model-dependent.
+        </div>
+      )}
 
       <dl className="kv">
         <dt>peak <Tex math="k_{p,0}" /> (μm⁻¹)</dt><dd>{fixed(desc.kp0_um_inv, 4)}</dd>

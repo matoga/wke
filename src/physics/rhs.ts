@@ -99,7 +99,7 @@ export function combinePartials(a: RhsPartial, b: RhsPartial): RhsPartial {
   };
 }
 
-/** Pole alarm for the resummed models: stop when 1/|1 − cL|² exceeds this. */
+/** Pole alarm for the resummed models: stop when any 1/|1 − cL|² exceeds this. */
 export const POLE_WEIGHT_LIMIT = 10;
 /** Stop the one-loop model when this fraction of the collision weight has M < 0. */
 export const NEGATIVE_WEIGHT_LIMIT = 1e-3;
@@ -127,7 +127,7 @@ export function finalizeDiagnostics(kind: RhsKind, rung: number, part: RhsPartia
     mHist,
     poleIndicator: w,
     stop: w >= POLE_WEIGHT_LIMIT
-      ? `The resummed vertex approached its pole: 1/|1 − ${rung === 1 ? '' : rung}L₋|² reached ${w.toFixed(1)}.`
+      ? `The resummed vertex approached its pole: ${rung === 1 ? '1/|1 − L₋|²' : `1/|1 − L₊|² or 1/|1 − ${rung}L₋|²`} reached ${w.toFixed(1)}.`
       : null,
   };
 }
@@ -162,7 +162,7 @@ export interface LoopRhsOptions {
   ncal: number;
   /** sign of the scattering length */
   sign: number;
-  /** Gauss nodes for the s-channel average of the one-loop model */
+  /** Gauss nodes for the s-channel average (one-loop and heuristic models) */
   sNodes: number;
   /** multiplies every loop; 1 is physical (tests only) */
   loopScale?: number;
@@ -186,12 +186,15 @@ export function makeLoopPartial(o: LoopRhsOptions): PartialRhs {
   const n = grid.length;
   const nPairs = geom.nPairs;
   const ev = makeLoopEvaluators(o.loopOp);
-  const { lPlus, lMinusRe, lMinusIm } = ev;
+  const { lPlus, lPlusIm, lMinusRe, lMinusIm } = ev;
   const F = new Float64Array(ch.nF);
   const Phi = new Float64Array(ch.nPhi);
   const coupling = (o.loopScale ?? 1) * o.sign / o.ncal;
   const c = loopRung(model);
   const oneLoop = model === 'one-loop';
+  // The heuristic model also resums the s channel: M = ⟨|1 − L₊|⁻²⟩_s · ⟨|1 − 4L₋|⁻²⟩_t.
+  const sResum = model === 'heuristic';
+  const piCoupling = Math.PI * coupling;
   const scale = treePrefactor(o.ncal);
   const gauss = leggauss(o.sNodes);
   const gx = gauss.x, gw = gauss.w, nG = gx.length;
@@ -218,7 +221,8 @@ export function makeLoopPartial(o: LoopRhsOptions): PartialRhs {
           const im = -0.5 * Math.PI * c * coupling * lMinusIm(Q, w);
           const d = (1 - re) * (1 - re) + im * im;
           if (d < dMin) dMin = d;
-          F[off + s] = 1 / d;
+          // Floor keeps an exact hit of the pole finite when runs go past it.
+          F[off + s] = 1 / Math.max(d, 1e-8);
         }
       }
       const po = pairPhi[k];
@@ -269,7 +273,7 @@ export function makeLoopPartial(o: LoopRhsOptions): PartialRhs {
             const phiB = Phi[po + kb] + h * (F[b] * (C23 * r3 - 1.5 * r2 + r) + F[b + 1] * (2 * r2 - C43 * r3) + F[b + 2] * (C23 * r3 - 0.5 * r2));
             M = (phiB - phiA) / ((eb - ea) * h);
           }
-          if (oneLoop) {
+          if (oneLoop || sResum) {
             const q2 = p2e[e];
             const p3 = Math.sqrt(Math.max(p1 * p1 + q2 * q2 - pSq, 0));
             const lo = Math.max(Math.abs(p - p3), Math.abs(p1 - q2));
@@ -277,10 +281,22 @@ export function makeLoopPartial(o: LoopRhsOptions): PartialRhs {
             const omegaPlus = pSq + p3 * p3;
             const mid = 0.5 * (lo + hi), half = 0.5 * (hi - lo);
             let sum = 0;
-            for (let j = 0; j < nG; j++) {
-              sum += gw[j] * lPlus(mid + half * gx[j], omegaPlus);
+            if (oneLoop) {
+              for (let j = 0; j < nG; j++) {
+                sum += gw[j] * lPlus(mid + half * gx[j], omegaPlus);
+              }
+              M += 1 + coupling * sum;
+            } else {
+              for (let j = 0; j < nG; j++) {
+                const P = mid + half * gx[j];
+                const re = coupling * lPlus(P, omegaPlus);
+                const im = piCoupling * lPlusIm(P, omegaPlus);
+                const d = (1 - re) * (1 - re) + im * im;
+                if (d < dMin) dMin = d;
+                sum += gw[j] / Math.max(d, 1e-8);
+              }
+              M *= 0.5 * sum;
             }
-            M += 1 + coupling * sum;
           }
 
           const w = weight[e];

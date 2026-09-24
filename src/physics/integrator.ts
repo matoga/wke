@@ -47,6 +47,8 @@ export interface IntegrationResult {
   terminationMessage: string | null;
   /** lattice stride at the end of the run (see LATTICE_UNIT) */
   latticeStride: number;
+  /** first time the model left its range of validity, when the run went on regardless */
+  breakdown: { tau: number; t_s: number; message: string } | null;
   reachedTarget: boolean;
   tauTarget: number | null;
   dtTarget_s: number | null;
@@ -111,9 +113,17 @@ export interface IntegrationConfig {
    */
   tauEval?: ArrayLike<number>;
   onProgress?: (info: { pct: number; tau: number; kp: number; nSteps: number; nRhs: number; diag: RhsDiagnostics }) => void;
+  /** the state at each `tauEval` time, from the dense output (analysis scripts) */
+  onEval?: (tau: number, f: Float64Array) => void;
   /** Copies of accepted states for the UI; never used by the solver. */
   onLive?: (snapshot: Snapshot, stride: number) => void;
   shouldStop?: () => boolean;
+  /**
+   * Stop when the model leaves its range of validity (resummed pole, negative
+   * one-loop bracket). When false the run continues and the first breakdown
+   * is reported instead.
+   */
+  stopAtBreakdown?: boolean;
   /** peak-estimator depth (see PEAK_DEPTH); 0 is the three-point parabola */
   peakDepth?: number;
   /** minimum wall time between progress callbacks (ms) */
@@ -183,8 +193,8 @@ export async function runWKE(config: IntegrationConfig): Promise<IntegrationResu
   const {
     rhs: rhsFn, grid: p, gridWeights: wq, t0_s, xi_um, kp0_um_inv, f0, tauMax,
     rtol = 1e-7, atol = 1e-10, nSnapshots = 40, snapshotIntervalTau,
-    maxSteps = 200000, tauEval, onProgress, onLive, shouldStop, progressInterval_ms = 150,
-    lattice = { offsetTau: 0, stride: 1 },
+    maxSteps = 200000, tauEval, onEval, onProgress, onLive, shouldStop, progressInterval_ms = 150,
+    lattice = { offsetTau: 0, stride: 1 }, stopAtBreakdown = true,
     haltOnHalf = true, stopKpFraction = 0.5, peakDepth = PEAK_DEPTH,
   } = config;
 
@@ -277,9 +287,13 @@ export async function runWKE(config: IntegrationConfig): Promise<IntegrationResu
   kpTrack.loop.push(diag.loopDressing); kpTrack.pole.push(diag.poleIndicator);
   let termination: Termination | null = null;
   let terminationMessage: string | null = null;
+  let breakdown: { tau: number; message: string } | null = null;
   if (diag.stop) {
-    termination = 'pole';
-    terminationMessage = diag.stop;
+    breakdown = { tau: 0, message: diag.stop };
+    if (stopAtBreakdown) {
+      termination = 'pole';
+      terminationMessage = diag.stop;
+    }
   }
   const hInit = Number.isFinite(tauMax) ? tauMax / 2000 : 1;
   let h = hInit;
@@ -386,6 +400,7 @@ export async function runWKE(config: IntegrationConfig): Promise<IntegrationResu
           evalTrack.tau.push(te);
           evalTrack.t_s.push(te * t0_s);
           evalTrack.kp.push(kpOf(fe));
+          onEval?.(te, fe);
         }
         evalIdx++;
       }
@@ -432,8 +447,11 @@ export async function runWKE(config: IntegrationConfig): Promise<IntegrationResu
     kpTrack.pole.push(diag.poleIndicator);
 
     if (diag.stop && !reachedHalf) {
-      termination = 'pole';
-      terminationMessage = diag.stop;
+      if (!breakdown) breakdown = { tau, message: diag.stop };
+      if (stopAtBreakdown) {
+        termination = 'pole';
+        terminationMessage = diag.stop;
+      }
     }
 
     if (onProgress) {
@@ -479,6 +497,7 @@ export async function runWKE(config: IntegrationConfig): Promise<IntegrationResu
     termination,
     terminationMessage,
     latticeStride: stride,
+    breakdown: breakdown ? { ...breakdown, t_s: breakdown.tau * t0_s } : null,
     reachedTarget: reachedHalf,
     tauTarget: tauHalf,
     dtTarget_s: tauHalf !== null ? tauHalf * t0_s : null,

@@ -21,6 +21,8 @@ export interface WKERunRequest {
   speciesKey: string;
   /** Stop when k_p(t) / k_p,0 reaches this value (0 < value < 1). */
   stopKpFraction: number;
+  /** stop when the model leaves its range of validity; otherwise report it and go on */
+  stopAtBreakdown: boolean;
   /** safety bound on the dimensionless run time */
   tauMax: number;
   nSnapshots: number;
@@ -117,6 +119,8 @@ export interface WKEResult {
   snapshots: WKESnapshot[];
   /** lattice stride at the end of this segment */
   latticeStride: number;
+  /** first breakdown of the model in this segment when the run continued past it (t_s from the segment start) */
+  breakdown: { t_s: number; message: string } | null;
   kpTrack: { t_s: number[]; kp: number[]; loop: number[]; pole: number[] };
   evalTrack: { t_s: number[]; kp: number[] };
   scales: {

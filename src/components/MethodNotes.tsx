@@ -11,7 +11,7 @@ const MODEL_NOTES: Record<string, string> = {
   bare: 'Leading order in the coupling. Even in a, so attraction and repulsion relax identically.',
   'one-loop': 'Exact next order for a one-component gas. Odd in a: attraction speeds the cascade up, repulsion slows it down. Quantitative while the dressing |M − 1| stays small.',
   chain: 'All-order resummation of the exchange bubble chain, as in the large-N vector model, placed on the one-component tree level. Reduces to 1 + 2 Re L₋ at one loop.',
-  heuristic: 'Exchange chain with the one-component rung weight 4. It reproduces the exchange part 8 Re L₋ of the one-loop term, but omits L₊ and all crossed diagrams, and the location of its pole, 4 Re L₋ = 1, is not derived. A mean-field linear-response argument would place it at 2 Re L₋ = 1 instead.',
+  heuristic: 'Separate geometric chains in the particle-particle and exchange channels, with the rung weights 1 and 4 that reproduce the full one-loop bracket 1 + 2 Re L₊ + 8 Re L₋ at first order. Beyond that it is a guess: it omits crossed diagrams and the mixing of the two channels, and the location of its exchange pole, 4 Re L₋ = 1, is not derived. A mean-field linear-response argument would place it at 2 Re L₋ = 1 instead.',
 };
 
 export function MethodNotes() {
@@ -31,9 +31,9 @@ export function MethodNotes() {
         <Tex math="M_{1234}" /> of each collision, built from two one-loop bubbles of the current spectrum: the
         particle-particle bubble <Tex math="L_+" /> at total momentum <Tex math="p_+ = |\mathbf p_1 + \mathbf p_2|" /> and
         the exchange bubble <Tex math="L_-" /> at transfer <Tex math="p_- = |\mathbf p_4 - \mathbf p_2|" />,{' '}
-        <Tex math="\omega_- = \omega_4 - \omega_2" />:
+        <Tex math="\omega_- = \omega_4 - \omega_2" />, with <Tex math="p_{12} = |\mathbf p_1 - \mathbf p_2|" />:
       </p>
-      <Tex block math={String.raw`\mathrm{Re}\,L_+ = \frac{4\pi\lambda}{p_+}\int_0^\infty dq\, q\, n_q \ln\left|\frac{q^2 - q p_+ + \mathbf p_1\!\cdot\mathbf p_2}{q^2 + q p_+ + \mathbf p_1\!\cdot\mathbf p_2}\right|`} />
+      <Tex block math={String.raw`L_+ = \frac{4\pi\lambda}{p_+}\int_0^\infty dq\, q\, n_q \ln\left|\frac{q^2 - q p_+ + \mathbf p_1\!\cdot\mathbf p_2}{q^2 + q p_+ + \mathbf p_1\!\cdot\mathbf p_2}\right| \;-\; i\,\frac{4\pi^2\lambda}{p_+}\int_{|p_+ - p_{12}|/2}^{(p_+ + p_{12})/2} dq\, q\, n_q`} />
       <Tex block math={String.raw`L_- = \frac{2\pi\lambda}{p_-}\int_0^\infty dq\, q\, n_q \ln\left|\frac{(p_-^2 - 2p_-q)^2 - \omega_-^2}{(p_-^2 + 2p_-q)^2 - \omega_-^2}\right| \;-\; i\,\frac{2\pi^2\lambda}{p_-}\int_{|p_-^2-\omega_-|/2p_-}^{(p_-^2+\omega_-)/2p_-} dq\, q\, n_q`} />
       <p>
         Both are odd in <Tex math="a" />. For a fixed spectral shape they scale as{' '}
@@ -106,7 +106,7 @@ export function MethodNotes() {
         The loop models use classical wave statistics; only the bare equation offers the Bose <Tex math="f \to f + 1" />{' '}
         terms. A one-loop run stops when its bracket <Tex math="M" /> turns negative on more than{' '}
         {NEGATIVE_WEIGHT_LIMIT * 100}% of the collision weight, and a resummed run stops when{' '}
-        <Tex math="1/|1 - cL_-|^2" /> reaches {POLE_WEIGHT_LIMIT}: past these points the models say nothing
+        any of its weights <Tex math="1/|1 - cL|^2" /> reaches {POLE_WEIGHT_LIMIT}: past these points the models say nothing
         quantitative. The resummed vertices can approach their pole for repulsive gases too, because{' '}
         <Tex math="\mathrm{Re}\,L_-" /> changes sign across the resonant configurations. Particle number and energy are
         conserved by the equation; their small drift is the discretisation error of the truncated grid and is shown with

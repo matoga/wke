@@ -10,6 +10,7 @@
  * and, with divided differences H[a, b] = (H(a) − H(b))/(a − b),
  *
  *   Re L₊(P, ω₊) = (s_a/N_cal) H[y_a, y_b],   y_a = (P + D)/2, y_b = (D − P)/2, D = √(2ω₊ − P²)
+ *   Im L₊(P, ω₊) = −(π s_a/N_cal) (J(y_a) − J(y_b))/P
  *   Re L₋(Q, ω)  = (s_a/2N_cal) H[x_a, x_b],  x_a = (|ω| + Q²)/2Q, x_b = (|ω| − Q²)/2Q
  *   Im L₋(Q, ω)  = −(π s_a/2N_cal) (J(x_a) − J(x_b))/Q
  *
@@ -305,6 +306,12 @@ export function reLplusRaw(st: LoopState, P: number, omegaPlus: number): number 
   return divH(st, 0.5 * (P + D), 0.5 * (D - P));
 }
 
+/** Im L₊ without the prefactor −π s_a/N_cal: (J(y_a) − J(y_b))/P. */
+export function imLplusRaw(st: LoopState, P: number, omegaPlus: number): number {
+  const D = Math.sqrt(Math.max(2 * omegaPlus - P * P, 0));
+  return (evalJ(st, 0.5 * (P + D)) - evalJ(st, 0.5 * (D - P))) / P;
+}
+
 /** Re L₋ without the prefactor s_a/(2N_cal): H[x_a, x_b]. */
 export function reLminusRaw(st: LoopState, Q: number, absOmega: number): number {
   const xa = (absOmega + Q * Q) / (2 * Q);
@@ -323,6 +330,9 @@ export function imLminusRaw(st: LoopState, Q: number, absOmega: number): number 
 export function reLplus(st: LoopState, P: number, omegaPlus: number, sign: number, ncal: number): number {
   return (sign / ncal) * reLplusRaw(st, P, omegaPlus);
 }
+export function imLplus(st: LoopState, P: number, omegaPlus: number, sign: number, ncal: number): number {
+  return (-Math.PI * sign / ncal) * imLplusRaw(st, P, omegaPlus);
+}
 export function reLminus(st: LoopState, Q: number, absOmega: number, sign: number, ncal: number): number {
   return (sign / (2 * ncal)) * reLminusRaw(st, Q, absOmega);
 }
@@ -340,6 +350,8 @@ export interface LoopEvaluators {
   update: (f: Float64Array) => void;
   /** H[y_a, y_b] for Re L₊ */
   lPlus: (P: number, omegaPlus: number) => number;
+  /** (J(y_a) − J(y_b))/P for Im L₊ */
+  lPlusIm: (P: number, omegaPlus: number) => number;
   /** H[x_a, x_b] for Re L₋ */
   lMinusRe: (Q: number, absOmega: number) => number;
   /** (J(x_a) − J(x_b))/Q for Im L₋ */
@@ -427,6 +439,12 @@ export function makeLoopEvaluators(op: LoopOperator): LoopEvaluators {
       const q = 2 * omegaPlus - P * P;
       const D = q > 0 ? Math.sqrt(q) : 0;
       return dd(0.5 * (P + D), 0.5 * (D - P));
+    },
+    lPlusIm: (P, omegaPlus) => {
+      const q = 2 * omegaPlus - P * P;
+      const D = q > 0 ? Math.sqrt(q) : 0;
+      const yb = 0.5 * (D - P);
+      return (jAbs(0.5 * (P + D)) - jAbs(yb < 0 ? -yb : yb)) / P;
     },
     lMinusRe: (Q, w) => {
       const inv = 0.5 / Q;

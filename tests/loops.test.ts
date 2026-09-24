@@ -12,7 +12,7 @@ import { logarithmicGrid } from '../src/physics/grid';
 import { buildGeometry } from '../src/physics/collision';
 import { buildChannelGeometry } from '../src/physics/channels';
 import {
-  buildLoopOperator, chi0, createLoopState, evalH, imLminus, makeLoopEvaluators, reLminus, reLplus, updateLoopState,
+  buildLoopOperator, chi0, createLoopState, evalH, imLminus, imLplus, makeLoopEvaluators, reLminus, reLplus, updateLoopState,
 } from '../src/physics/loops';
 import { makeBarePartial, makeLoopPartial, makeLoopRhs } from '../src/physics/rhs';
 import type { RhsDiagnostics } from '../src/physics/rhs';
@@ -58,6 +58,25 @@ section('Loop functionals vs independent continuum values');
   for (const [P, w, re] of [[6, 40, -3.97967534e-2], [10, 80, -1.80007585e-2], [13, 89, -2.80334232e-2], [3, 60, -4.74739971e-2]]) {
     relClose(`Re L₊(P=${P}, ω₊=${w})`, reLplus(st, P, w, 1, NCAL), re, 1e-3);
   }
+  // Complex L₊ straight from its angular integral, ∫dμ 1/(A + Bμ + iη) with
+  // A = ω₊ − 2q² − P², B = 2qP, on the continuum spectrum, with no use of H or J.
+  const lPlusDirect = (P: number, w: number): [number, number] => {
+    const N = 400000, a = 1e-4, b = 40, h = (b - a) / N, eta = 1e-7;
+    let re = 0, im = 0;
+    for (let i = 0; i <= N; i++) {
+      const q = a + i * h;
+      const c = (i === 0 || i === N ? 1 : i % 2 ? 4 : 2) * (h / 3) * q * q * (qp(q) / Z / (q * q));
+      const A = w - 2 * q * q - P * P, B = 2 * q * P;
+      re += (c * Math.log(((A + B) ** 2 + eta * eta) / ((A - B) ** 2 + eta * eta))) / (2 * B);
+      im -= (c * (Math.atan((A + B) / eta) - Math.atan((A - B) / eta))) / B;
+    }
+    return [(2 / NCAL) * re, (2 / NCAL) * im];
+  };
+  for (const [P, w] of [[6, 40], [10, 80], [13, 89], [3, 60]]) {
+    const [re, im] = lPlusDirect(P, w);
+    relClose(`Re L₊(P=${P}, ω₊=${w}) from the angular integral`, reLplus(st, P, w, 1, NCAL), re, 1e-3);
+    absClose(`Im L₊(P=${P}, ω₊=${w}) from the angular integral`, imLplus(st, P, w, 1, NCAL), im, 2e-3 * Math.max(Math.abs(im), 1e-4));
+  }
   relClose('attractive sign flips every loop', reLminus(st, 5, 20, -1, NCAL), -reLminus(st, 5, 20, 1, NCAL), 1e-15);
 
   const ev = makeLoopEvaluators(st.op);
@@ -65,6 +84,7 @@ section('Loop functionals vs independent continuum values');
   relClose('fast evaluator == reference evaluator (Re L₋)', ev.lMinusRe(5, 20) / (2 * NCAL), reLminus(st, 5, 20, 1, NCAL), 1e-13);
   relClose('fast evaluator == reference evaluator (Im L₋)', (-Math.PI / (2 * NCAL)) * ev.lMinusIm(8, 30), imLminus(st, 8, 30, 1, NCAL), 1e-13);
   relClose('fast evaluator == reference evaluator (Re L₊)', ev.lPlus(6, 40) / NCAL, reLplus(st, 6, 40, 1, NCAL), 1e-13);
+  relClose('fast evaluator == reference evaluator (Im L₊)', (-Math.PI / NCAL) * ev.lPlusIm(10, 80), imLplus(st, 10, 80, 1, NCAL), 1e-13);
 
   const fine = logarithmicGrid(0.01, P_MAX_REF, 2000);
   const stFine = createLoopState(buildLoopOperator(fine, 2000));
@@ -101,6 +121,8 @@ const REF: Record<string, number[][]> = {
 };
 const IDX = [375, 393, 407, 419, 428];
 const MODELS = ['one-loop', 'chain', 'heuristic'] as const;
+/** models with independent reference ratios in REF (columns in MODELS order) */
+const REF_MODELS = 2;
 
 for (const [label, quad, tol] of [
   ['parity quadrature', { nqLow: 16, nqHigh: 16, panels: 1 }, 5e-3],
@@ -112,12 +134,12 @@ for (const [label, quad, tol] of [
   makeBarePartial(geom, 'classical', NCAL)(f, bare);
   for (const sign of [1, -1]) {
     let worst = 0;
-    for (let m = 0; m < MODELS.length; m++) {
+    for (let m = 0; m < REF_MODELS; m++) {
       const out = new Float64Array(grid.length);
       makeLoopPartial({ model: MODELS[m], geom, channels: ch, loopOp: op, ncal: NCAL, sign, sNodes: 4 })(f, out);
       IDX.forEach((i, r) => { worst = Math.max(worst, Math.abs(out[i] / bare[i] - REF[String(sign)][r][m])); });
     }
-    check(`${label}, a ${sign > 0 ? '> 0' : '< 0'}: one loop, chain, heuristic`, worst <= tol, `max |Δ| = ${worst.toExponential(2)} (tol ${tol})`);
+    check(`${label}, a ${sign > 0 ? '> 0' : '< 0'}: one loop, chain`, worst <= tol, `max |Δ| = ${worst.toExponential(2)} (tol ${tol})`);
   }
 }
 
@@ -150,12 +172,18 @@ section('Model identities');
   const parity = maxDiff(avg, bare) / bareMax;
   check('one loop is odd in a: C(+a) + C(−a) = 2 C_bare', parity < 1e-12, `max rel = ${parity.toExponential(2)}`);
 
-  // First order: chain → 1 + 2 Re L₋, heuristic → 1 + 8 Re L₋.
+  // First order: chain → 1 + 2 Re L₋, heuristic → 1 + 2 Re L₊ + 8 Re L₋ (the one-loop bracket).
   const eps = 1e-3;
-  const dc = run('chain', 1, eps).out, dh = run('heuristic', 1, eps).out;
-  let num = 0, den = 0;
-  for (let i = 0; i < n; i++) { num += Math.abs(dh[i] - bare[i]); den += Math.abs(dc[i] - bare[i]); }
-  relClose('weak coupling: (heuristic − bare) = 4 (chain − bare)', num / den, 4, 1e-2);
+  const dc = run('chain', 1, eps).out, dh = run('heuristic', 1, eps).out, dl = run('one-loop', 1, eps).out;
+  let num = 0, den = 0, dev = 0, act = 0;
+  for (let i = 0; i < n; i++) {
+    num += Math.abs(dh[i] - bare[i]);
+    den += Math.abs(dc[i] - bare[i]);
+    dev = Math.max(dev, Math.abs(dh[i] - dl[i]));
+    act = Math.max(act, Math.abs(dl[i] - bare[i]));
+  }
+  check('weak coupling: heuristic = one loop at first order', dev / act < 1e-2, `max |heuristic − one loop| / max |one loop − bare| = ${(dev / act).toExponential(2)}`);
+  check('weak coupling: the particle-particle chain matters (heuristic ≠ 4 × chain)', Math.abs(num / den - 4) > 0.05, `ratio ${(num / den).toFixed(3)}`);
 
   // Conservation quality: the loops must not degrade the discrete scheme's
   // number and energy balance appreciably.
@@ -232,7 +260,7 @@ section('Models end to end (Draft, one-component gas)');
   const gaussQ = Array.from(INPUT_GRID, (k) => Math.exp(-0.5 * ((k - 2) / 0.28) ** 2));
   const req = (model: WKERunRequest['model'], a_a0: number): WKERunRequest => ({
     type: 'run', runId: 't', model, kernel: 'classical', accuracy: 'draft',
-    q: gaussQ, density_um3: 2.8331, a_a0, speciesKey: 'K39', stopKpFraction: 0.5, tauMax: 4000, nSnapshots: 20,
+    q: gaussQ, density_um3: 2.8331, a_a0, speciesKey: 'K39', stopKpFraction: 0.5, stopAtBreakdown: true, tauMax: 4000, nSnapshots: 20,
   });
   const backend = localBackend();
   const t = async (model: WKERunRequest['model'], a: number) =>

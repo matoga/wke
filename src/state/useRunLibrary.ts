@@ -55,6 +55,7 @@ export interface RunJob {
   kernel: KernelType;
   accuracy: AccuracyLevel;
   checkConvergence: boolean;
+  stopAtBreakdown: boolean;
 }
 
 interface QueuedJob extends RunJob {
@@ -76,6 +77,8 @@ export interface RunProgress {
   elapsed_ms?: number;
   queued: number;
   error?: string;
+  /** a convergence check reruns the shown run and leaves its result valid */
+  purpose?: 'main' | 'check';
 }
 
 const IDLE: RunProgress = { running: false, label: '', phase: '', pct: 0, queued: 0 };
@@ -107,6 +110,7 @@ function mergeContinuation(prior: WKEResult, seg: WKEResult): WKEResult {
     termination: seg.termination === 'steps' && reached ? 'target' : seg.termination,
     terminationMessage: seg.terminationMessage,
     snapshots: onLattice([...prior.snapshots, ...snapshots], seg.latticeStride),
+    breakdown: prior.breakdown ?? (seg.breakdown ? { ...seg.breakdown, t_s: seg.breakdown.t_s + offsetT } : null),
     latticeStride: seg.latticeStride,
     kpTrack: {
       t_s: [...prior.kpTrack.t_s, ...seg.kpTrack.t_s.slice(1).map((t) => t + offsetT)],
@@ -187,11 +191,12 @@ export function useRunLibrary(setup: RunSetup | null) {
       a_a0: s.a_a0,
       speciesKey: s.speciesKey,
       stopKpFraction: s.stopKpFraction,
+      stopAtBreakdown: job.stopAtBreakdown,
       tauMax: TAU_MAX,
       nSnapshots: NSNAPSHOTS,
       tEval_s: job.tEval_s,
     };
-    setProgress({ running: true, label: label(job, job.purpose), phase: 'setup', pct: 0, queued: queueRef.current.length });
+    setProgress({ running: true, label: label(job, job.purpose), phase: 'setup', pct: 0, queued: queueRef.current.length, purpose: job.purpose });
     w.postMessage(req);
   }, []);
 

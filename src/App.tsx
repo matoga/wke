@@ -74,6 +74,7 @@ export default function App() {
     kernel: model === 'bare' ? sim.effectiveKernel : 'classical',
     accuracy: settings.accuracy,
     checkConvergence: settings.checkConvergence,
+    stopAtBreakdown: settings.stopAtBreakdown,
   });
 
   return (

@@ -73,7 +73,7 @@ export function loopVerdict(r: WKEResult): Verdict | null {
     return { tone: 'ok', text: `${text}: perturbative`, title };
   }
   const wMax = r.kpTrack.pole.reduce((m, v) => Math.max(m, v), 0);
-  const title = `Largest resummed weight 1/|1 − cL₋|² reached during the run. The run stops at ${POLE_WEIGHT_LIMIT}.`;
+  const title = `Largest resummed weight 1/|1 − cL|² reached during the run. The run stops at ${POLE_WEIGHT_LIMIT}.`;
   const text = `vertex weight up to ${wMax.toFixed(2)}`;
   if (wMax >= POLE_WEIGHT_LIMIT) return { tone: 'bad', text: `${text}: at the pole`, title };
   if (wMax >= 2) return { tone: 'warn', text: `${text}: near the pole`, title };

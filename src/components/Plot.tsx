@@ -4,7 +4,7 @@
  * Colours are CSS values, so tokens follow the light and dark themes.
  */
 
-import React, { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 export interface Series {
   id: string;
@@ -62,6 +62,8 @@ export interface PlotProps {
   formatX?: (v: number) => string;
   formatY?: (v: number) => string;
   ariaLabel?: string;
+  /** mouse-wheel zoom, drag to pan, double-click or the reset button to restore */
+  zoomable?: boolean;
   editableSeries?: {
     id: string;
     onChange: (values: number[]) => void;
@@ -125,8 +127,10 @@ export function Plot({
   series, markers = [], points = [],
   xLabel, yLabel, xScale = 'linear', yScale = 'linear', xDomain, yDomain,
   aspect = 1.618, minHeight = 200, maxHeight = 460,
-  formatX = defaultFormat, formatY = defaultFormat, ariaLabel, editableSeries,
+  formatX = defaultFormat, formatY = defaultFormat, ariaLabel, editableSeries, zoomable = false,
 }: PlotProps) {
+  const [zoom, setZoom] = useState<{ x: [number, number]; y: [number, number] } | null>(null);
+  const panStart = useRef<{ startX: number; startY: number; x: [number, number]; y: [number, number] } | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [width, setWidth] = useState(560);
@@ -152,6 +156,25 @@ export function Plot({
 
   const iw = Math.max(60, width - MARGIN.left - MARGIN.right);
   const ih = Math.max(60, height - MARGIN.top - MARGIN.bottom);
+  const geo = useRef({ width, height, iw, ih });
+  geo.current = { width, height, iw, ih };
+
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!zoomable || !svg) return;
+    const onWheel = (e: WheelEvent) => {
+      const g = geo.current;
+      const rect = svg.getBoundingClientRect();
+      const px = (e.clientX - rect.left) * (g.width / rect.width) - MARGIN.left;
+      const py = (e.clientY - rect.top) * (g.height / rect.height) - MARGIN.top;
+      if (px < 0 || px > g.iw || py < 0 || py > g.ih) return;
+      e.preventDefault();
+      const factor = Math.exp(Math.sign(e.deltaY) * Math.min(0.5, Math.abs(e.deltaY) / 400) * 0.6);
+      zoomRef.current(factor, px / g.iw, 1 - py / g.ih, e.shiftKey ? 'x' : e.altKey ? 'y' : 'both');
+    };
+    svg.addEventListener('wheel', onWheel, { passive: false });
+    return () => svg.removeEventListener('wheel', onWheel);
+  }, [zoomable]);
 
   const { dx0, dx1, dy0, dy1 } = useMemo(() => {
     let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
@@ -182,8 +205,30 @@ export function Plot({
     }
     if (b <= a) b = a + (xScale === 'log' ? a : 1);
     if (d <= c) d = c + (yScale === 'log' ? c : 1);
+    if (zoom) return { dx0: zoom.x[0], dx1: zoom.x[1], dy0: zoom.y[0], dy1: zoom.y[1] };
     return { dx0: a, dx1: b, dy0: c, dy1: d };
-  }, [series, xDomain, yDomain, xScale, yScale]);
+  }, [series, xDomain, yDomain, xScale, yScale, zoom]);
+
+  // Zoom and pan work in the axis coordinate: ln v on a log axis, v otherwise.
+  const toU = (v: number, log: boolean) => (log ? Math.log(v) : v);
+  const fromU = (u: number, log: boolean) => (log ? Math.exp(u) : u);
+  const scaleRange = (r: [number, number], log: boolean, factor: number, anchor: number): [number, number] => {
+    const a = toU(r[0], log), b = toU(r[1], log), m = toU(anchor, log);
+    return [fromU(m + (a - m) * factor, log), fromU(m + (b - m) * factor, log)];
+  };
+  const zoomBy = useCallback((factor: number, fx: number, fy: number, axes: 'both' | 'x' | 'y') => {
+    const xr: [number, number] = [dx0, dx1], yr: [number, number] = [dy0, dy1];
+    const ax = xScale === 'log' ? Math.exp(Math.log(dx0) + fx * (Math.log(dx1) - Math.log(dx0))) : dx0 + fx * (dx1 - dx0);
+    const ay = yScale === 'log' ? Math.exp(Math.log(dy0) + fy * (Math.log(dy1) - Math.log(dy0))) : dy0 + fy * (dy1 - dy0);
+    setZoom({
+      x: axes === 'y' ? xr : scaleRange(xr, xScale === 'log', factor, ax),
+      y: axes === 'x' ? yr : scaleRange(yr, yScale === 'log', factor, ay),
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dx0, dx1, dy0, dy1, xScale, yScale]);
+  const zoomRef = useRef(zoomBy);
+  zoomRef.current = zoomBy;
+  useEffect(() => { setZoom(null); }, [xScale, yScale, xLabel, yLabel]);
 
   const sx = useCallback((v: number) => (xScale === 'log'
     ? ((Math.log(Math.max(v, 1e-300)) - Math.log(dx0)) / (Math.log(dx1) - Math.log(dx0))) * iw
@@ -212,8 +257,11 @@ export function Plot({
       const xv = s.x[i], yv = s.y[i];
       const ok = Number.isFinite(xv) && Number.isFinite(yv) && (xScale !== 'log' || xv > 0) && (yScale !== 'log' || yv > 0);
       if (!ok) { pen = false; continue; }
-      const X = Math.min(iw + 40, Math.max(-40, sx(xv)));
-      const Y = Math.min(ih + 40, Math.max(-40, sy(yv)));
+      // Only guard against absurd coordinates: clamping near the frame would
+      // move the end of a straight segment and change its slope. The clip path
+      // does the visual cropping.
+      const X = Math.min(1e6, Math.max(-1e6, sx(xv)));
+      const Y = Math.min(1e6, Math.max(-1e6, sy(yv)));
       d += `${pen ? 'L' : 'M'}${X.toFixed(1)} ${Y.toFixed(1)}`;
       pen = true;
     }
@@ -293,7 +341,7 @@ export function Plot({
         viewBox={`0 0 ${width} ${height}`}
         role="img"
         tabIndex={0}
-        className={editableSeries ? 'editable' : undefined}
+        className={editableSeries ? 'editable' : zoomable ? 'zoomable' : undefined}
         aria-label={ariaLabel ?? `${yLabel} against ${xLabel}. Arrow keys inspect values${editableSeries ? '; up and down arrows edit' : ''}.`}
         onKeyDown={onKeyDown}
         onMouseMove={(e) => {
@@ -304,17 +352,38 @@ export function Plot({
           setCursor({ px, x: invX(px) });
         }}
         onMouseLeave={() => { if (!draggedMarkerId) setCursor(null); }}
-        onPointerDown={editableSeries ? (e) => {
+        onDoubleClick={zoomable ? () => setZoom(null) : undefined}
+        onPointerDown={!editableSeries && zoomable ? (e) => {
+          if (draggedMarkerId || (e.target as Element).closest('.plot-marker') || e.button !== 0) return;
+          panStart.current = { startX: e.clientX, startY: e.clientY, x: [dx0, dx1], y: [dy0, dy1] };
+          e.currentTarget.setPointerCapture(e.pointerId);
+          e.currentTarget.classList.add('panning');
+        } : editableSeries ? (e) => {
           if (draggedMarkerId) return;
           lastPaint.current = null;
           painted.current = null;
           e.currentTarget.setPointerCapture(e.pointerId);
           paintAt(e.clientX, e.clientY, e.currentTarget);
         } : undefined}
-        onPointerMove={editableSeries ? (e) => {
+        onPointerMove={!editableSeries && zoomable ? (e) => {
+          const st = panStart.current;
+          if (!st || !e.currentTarget.hasPointerCapture(e.pointerId)) return;
+          const rect = e.currentTarget.getBoundingClientRect();
+          const fx = ((e.clientX - st.startX) * (width / rect.width)) / iw;
+          const fy = ((e.clientY - st.startY) * (height / rect.height)) / ih;
+          const shift = (r: [number, number], log: boolean, f: number): [number, number] => {
+            const a = toU(r[0], log), b = toU(r[1], log), d = f * (b - a);
+            return [fromU(a - d, log), fromU(b - d, log)];
+          };
+          setZoom({ x: shift(st.x, xScale === 'log', fx), y: shift(st.y, yScale === 'log', -fy) });
+        } : editableSeries ? (e) => {
           if (e.currentTarget.hasPointerCapture(e.pointerId)) paintAt(e.clientX, e.clientY, e.currentTarget);
         } : undefined}
-        onPointerUp={editableSeries ? (e) => {
+        onPointerUp={!editableSeries && zoomable ? (e) => {
+          panStart.current = null;
+          if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
+          e.currentTarget.classList.remove('panning');
+        } : editableSeries ? (e) => {
           const committed = painted.current;
           lastPaint.current = null;
           painted.current = null;
@@ -632,6 +701,13 @@ export function Plot({
           <text transform={`translate(${-MARGIN.left + 13},${ih / 2}) rotate(-90)`} textAnchor="middle" className="axis-title">{yLabel}</text>
         </g>
       </svg>
+      {zoomable && (
+        <div className="plot-zoom" role="group" aria-label="Zoom">
+          <button type="button" className="btn icon" title="Zoom in" aria-label="Zoom in" onClick={() => zoomBy(0.7, 0.5, 0.5, 'both')}>+</button>
+          <button type="button" className="btn icon" title="Zoom out" aria-label="Zoom out" onClick={() => zoomBy(1 / 0.7, 0.5, 0.5, 'both')}>−</button>
+          <button type="button" className="btn icon" title="Show all (or double-click the plot)" aria-label="Reset zoom" disabled={!zoom} onClick={() => setZoom(null)}>Reset</button>
+        </div>
+      )}
       <div className="readout" role="status" aria-live="polite" style={{ visibility: cursor && readout?.length ? 'visible' : 'hidden' }}>
         {xSymbol} = {formatX(cursor?.x ?? 0)}
         {(readout ?? []).map(({ s, y }) => <span key={s.id} style={{ color: s.color }}>{'   '}{formatY(y)}</span>)}

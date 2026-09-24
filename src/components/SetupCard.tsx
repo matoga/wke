@@ -98,6 +98,13 @@ export function SetupCard({
           Check convergence
         </label>
       </div>
+      {!bare && (
+        <label className="check" title="Stop a one-loop run when its bracket turns negative, or a resummed run when its vertex nears a pole. Off: keep integrating and flag the moment the model breaks down.">
+          <input type="checkbox" checked={settings.stopAtBreakdown}
+            onChange={(e) => onSettings({ stopAtBreakdown: e.target.checked })} />
+          Stop at model breakdown
+        </label>
+      )}
 
       <hr className="divider" />
 
