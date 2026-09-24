@@ -37,13 +37,15 @@ const FORBIDDEN = new Set([
   '25f11bc52e3009a517196114d6c926490ec6d273b22d76cc0a1ca10168f073e3',
 ]);
 
-const TEXT_EXT = new Set(['.ts', '.tsx', '.js', '.mjs', '.css', '.html', '.md', '.json', '.svg', '.txt']);
-const SCAN = ['src', 'tests', 'scripts', 'docs', 'shared-data', 'public', 'dist', 'README.md', 'index.html', 'package.json', 'vite.config.ts', 'tsconfig.json'];
+const TEXT_EXT = new Set(['.ts', '.tsx', '.js', '.mjs', '.css', '.html', '.md', '.json', '.svg', '.txt', '.py']);
+const SCAN = ['src', 'tests', 'scripts', 'analysis', 'docs', 'shared-data', 'public', 'dist', 'README.md', 'index.html', 'package.json', 'vite.config.ts', 'tsconfig.json'];
 
 function walk(p: string, out: string[]): void {
   if (!existsSync(p)) return;
   const st = statSync(p);
   if (st.isDirectory()) {
+    // unpublished: gitignored analysis results and the local plotting environment
+    if (/(^|\/)(results|\.venv|__pycache__)$/.test(p) && p.includes('analysis')) return;
     for (const e of readdirSync(p)) walk(join(p, e), out);
   } else if (TEXT_EXT.has(extname(p))) {
     out.push(p);
@@ -77,7 +79,8 @@ for (const file of files) {
   }
   if (/\/Users\/|~\/|[A-Z]:\\Users\\/.test(text)) failures.push(`${rel}: contains a local absolute path`);
   if (!isData && !isBundle && /\barxiv\b|\b\d{4}\.\d{5}\b/i.test(text)) failures.push(`${rel}: contains a preprint identifier`);
-  if (!isBundle && /\b[\w-]+\.py\b/.test(text)) failures.push(`${rel}: refers to a script outside this app`);
+  // the analysis tools are partly Python and name their own scripts
+  if (!isBundle && !rel.startsWith('analysis') && /\b[\w-]+\.py\b/.test(text)) failures.push(`${rel}: refers to a script outside this app`);
   // Library code in the bundle carries its own symbol tables (the typesetter
   // maps "---" to an em dash); the rendered text is checked by the UI test.
   if (text.includes('\u2014') && !(isBundle && extname(file) === '.js')) failures.push(`${rel}: contains an em dash`);

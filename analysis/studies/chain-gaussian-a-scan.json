@@ -1,0 +1,15 @@
+{
+  "name": "chain-gaussian-a-scan",
+  "question": "Bubble chain (N → ∞): how does the peak rate (m/ħ) d(1/k_p²)/dt depend on k_ξ/k_p, from k_ξ/k_p ≪ 1 to about 25, and does it depend on a or on the initial state?",
+  "model": "chain",
+  "accuracy": "draft",
+  "target": 25,
+  "pMin": 0.001,
+  "wallCap_s": 300,
+  "snapshots": 16,
+  "runs": [
+    { "state": "gaussian_shell", "a": [10, 25, 50, 150] },
+    { "state": "measured_b", "a": [10, 50] }
+  ],
+  "plots": { "thin": { "Gaussian shell": 2 }, "rateYmaxLinear": 2 }
+}

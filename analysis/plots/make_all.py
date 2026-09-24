@@ -1,0 +1,44 @@
+"""Make every figure of a study and write its README.
+
+usage: analysis/.venv/bin/python analysis/plots/make_all.py analysis/results/<study>
+"""
+import json
+import os
+import sys
+sys.path.insert(0, os.path.dirname(__file__))
+from common import load_study, run_id
+import rate
+import kp_gallery
+import spectra
+
+study_dir = sys.argv[1].rstrip('/')
+study, runs = load_study(study_dir)
+print(f'{os.path.basename(study_dir)}: {len(runs)} runs')
+for mod in (rate, kp_gallery, spectra):
+    mod.make(study_dir, study, runs)
+
+manifest_path = os.path.join(study_dir, 'manifest.json')
+manifest = json.load(open(manifest_path)) if os.path.exists(manifest_path) else {}
+lines = [f"# {os.path.basename(study_dir)}", '']
+if study.get('question') or manifest.get('question'):
+    lines += [study.get('question') or manifest.get('question'), '']
+if manifest.get('note'):
+    lines += [manifest['note'], '']
+lines += [
+    f"- Command: `{manifest.get('command', 'not recorded')}`",
+    f"- Solver commit: {manifest.get('gitCommit', 'not recorded')}"
+    + (' (with uncommitted solver changes)' if manifest.get('gitDirty') else ''),
+    f"- Started {manifest.get('started', 'n/a')}, finished {manifest.get('finished', 'n/a')}",
+    '',
+    '| Run | Model | Accuracy | E/N (nK) | Status | k_ξ/k_p reached | Wall (s) | Snapshots |',
+    '| --- | --- | --- | --- | --- | --- | --- | --- |',
+]
+for r in runs:
+    s = r['settings']
+    X = r['points']['X']
+    lines.append(f"| {run_id(r)} | {s['modelLabel']} | {s['accuracy']} | {r['initial']['EN_nK']:.1f} | {r.get('status', '?')} | "
+                 f"{(X[-1] if X else float('nan')):.2f} | {r['meta'].get('wall_s', float('nan')):.0f} | {len(r.get('snapshots', {}).get('n_k', []))} |")
+lines += ['', 'Figures (each with a .npz of the plotted arrays): ' + ', '.join(
+    sorted(f for f in os.listdir(os.path.join(study_dir, 'plots')) if f.endswith('.pdf'))) if os.path.isdir(os.path.join(study_dir, 'plots')) else '']
+open(os.path.join(study_dir, 'README.md'), 'w').write('\n'.join(lines) + '\n')
+print('  README.md')

@@ -1,0 +1,13 @@
+{
+  "name": "heuristic-b-gaussian",
+  "question": "Heuristic B (Z = Re L₊ + 4L₋): the peak rate against k_ξ/k_p for the Gaussian shell at two values of a. Run heuristic A by copying this file with \"model\": \"heuristic-a\".",
+  "model": "heuristic",
+  "accuracy": "draft",
+  "target": 25,
+  "pMin": 0.001,
+  "wallCap_s": 300,
+  "snapshots": 16,
+  "runs": [
+    { "state": "gaussian_shell", "a": [25, 150] }
+  ]
+}
