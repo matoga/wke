@@ -27,7 +27,11 @@ def load_study(study_dir):
     """Study definition (may be absent for migrated legacy studies) and its runs, sorted by E/N then a."""
     path = os.path.join(study_dir, 'study.json')
     study = json.load(open(path)) if os.path.exists(path) else {}
-    runs = [json.load(open(f)) for f in glob.glob(os.path.join(study_dir, 'runs', '*.json'))]
+    runs = []
+    for f in glob.glob(os.path.join(study_dir, 'runs', '*.json')):
+        r = json.load(open(f))
+        r['file'] = os.path.basename(f)
+        runs.append(r)
     runs.sort(key=lambda r: (r['initial']['EN_nK'], r['settings']['a_a0']))
     return study, runs
 
@@ -79,7 +83,10 @@ def ell_symbol(runs):
 
 def run_id(r):
     s = r['settings']
-    return f"{s['state']}_{s['a_a0']:g}a0_{s['model']}"
+    f = r.get('file', '')
+    # runs labelled by the study (e.g. sNN_ for a series of an experiment) keep the label, so ids stay unique
+    label = f.split('_')[0] + '_' if f[:1] == 's' and f[1:3].isdigit() else ''
+    return f"{label}{s['state']}_{s['a_a0']:g}a0_{s['model']}"
 
 
 class Style:

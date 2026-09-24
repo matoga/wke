@@ -59,6 +59,27 @@ commit and whether solver files had uncommitted changes, timings, status of ever
 - **Figure style:** marker = initial state, colour = a (ordered scale), points with error
   bars without caps, guides as thin grey labelled lines, legends outside the axes.
 
+## Comparison with experiment
+
+A study with an `experiment` field is compared with the published measurements of coherence spreading
+in a box of ³⁹K (13 series). The data folder is not in the repository: pass it as
+`make_all.py <study> --experiment <dir>` or set `WKE_EXPERIMENT_DATA`. Each run carries its series
+number as a label (`"label": "s01"` in the study, so the file is `s01_...json`), with the series'
+protocol (P1, P2, P3 = the presets Measured state C1, C2, C3), a and density N/V, and a target
+k_p = π/V^(1/3), twice past the box scale 2π/V^(1/3). `plots/experiment.py` then draws:
+
+- `experiment_rate`: (m/ħ) dℓ²/dt against (ℓ/ξ)² with the published points (lin-log, log-log, lin-lin);
+- `experiment_D`: D against na, t* against the published t*, and (ℓ/ξ)² at t*. D and t* come for both
+  from the same linear fit ℓ² = D (ħ/m)(t − t*) over (ℓ/ξ)² from 200 to 1000, which reproduces the
+  published D and t* from the published series;
+- `experiment_collapse`: ℓ² against t − t* and (ℓ/ξ)² against (t − t*)/t_ξ;
+- `experiment_kappa`: the IR exponent κ of n_k ∝ 1/(1 + (k/k₀)^κ) for the WKE and the measured spectra,
+  and one n_k comparison at k_p ≪ k_ξ matched in ℓ.
+
+The published ℓ uses the same normalisation as ℓ here at early times but carries a deconvolution
+that is not undone; the published n_k is per volume, n_k = V f/(2π)³; the published spectra of
+series 1 to 3 are labelled by t − t*.
+
 ## Known issues
 
 - **Kinetic energy drift** (found 2026-09-24 in `chain-standard-3states`, bubble chain, standard

@@ -1,0 +1,40 @@
+{
+  "name": "heuristic-c-standard-3states-quantum",
+  "question": "Heuristic C (bubble chain with rung weight 1.85) with the Bose +1 terms, at standard accuracy: the rate (m/ħ) d(1/k_p²)/dt and (m/ħ) dℓ²/dt up to k_ξ/k_p ≈ 30, for the same three states and four values of a as chain-standard-3states-quantum.",
+  "model": "heuristic-c",
+  "kernel": "quantum",
+  "accuracy": "standard",
+  "target": 30,
+  "pMin": 0.001,
+  "wallCap_s": 2700,
+  "snapshots": 16,
+  "runs": [
+    {
+      "state": "measured_b",
+      "a": [
+        10,
+        30,
+        100,
+        300
+      ]
+    },
+    {
+      "state": "gaussian_shell",
+      "a": [
+        10,
+        30,
+        100,
+        300
+      ]
+    },
+    {
+      "state": "prepared_a",
+      "a": [
+        10,
+        30,
+        100,
+        300
+      ]
+    }
+  ]
+}

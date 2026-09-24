@@ -4,6 +4,7 @@
  *   npx tsx analysis/run.ts --state gaussian_shell --a 25 --model chain --accuracy draft \
  *     --target 25 --out analysis/results/<study>/runs/<name>.json [--pmin 0.001] [--wall 300] [--snapshots 16]
  *     [--kernel classical|quantum]   (quantum: the WKE with the +1 terms; default classical)
+ *     [--density 2.8331] [--species K39] [--loopScale 1]
  *
  * Records, at samples spaced by 0.02 decades in k_ξ/k_p:
  *   - the smooth peak k_p (weighted parabola fit of ln(k² n_k) against ln k),
@@ -53,6 +54,8 @@ if (A.kernel === 'quantum' && !MODEL_BY_ID[model].allowsQuantum) {
 const pMin = Number(A.pmin ?? 0.001), wallCap = Number(A.wall ?? 600), nSnap = Number(A.snapshots ?? 16);
 const density = Number(A.density ?? 2.8331), speciesKey = A.species ?? 'K39';
 const kernel = (A.kernel ?? 'classical') as KernelType;
+// multiplies every loop, so for the exchange chain it is the rung weight c in 1/|1 − c L₋|² (calibration scans only)
+const loopScale = A.loopScale === undefined ? undefined : Number(A.loopScale);
 if (kernel !== 'classical' && kernel !== 'quantum') throw new Error(`unknown --kernel ${kernel}`);
 
 const git = (cmd: string) => { try { return execSync(`git ${cmd}`, { encoding: 'utf8' }).trim(); } catch { return ''; } };
@@ -65,6 +68,7 @@ const meta = {
 };
 
 const preset = getPreset(state);
+if (preset.key !== state) throw new Error(`unknown --state ${state}`);
 const spectrum = preset.load();
 const species = SPECIES[speciesKey];
 const hbarOverM = (HBAR_JS / species.massKg) * 1e12; // μm²/s
@@ -103,12 +107,13 @@ function kpSmooth(f: Float64Array, delta: number): number {
     if (L[i] > Lmax) { Lmax = L[i]; iMax = i; }
   }
   const xc = lnk[iMax];
-  let S0 = 0, S1 = 0, S2 = 0, S3 = 0, S4 = 0, T0 = 0, T1 = 0, T2 = 0;
+  let S0 = 0, S1 = 0, S2 = 0, S3 = 0, S4 = 0, T0 = 0, T1 = 0, T2 = 0, xLo = 0, xHi = 0;
   for (let i = 0; i < k.length; i++) {
     const drop = Lmax - L[i];
     if (!(drop < 12 * delta)) continue;
     const w = Math.exp(-drop / delta);
     const x = lnk[i] - xc, x2 = x * x;
+    xLo = Math.min(xLo, x); xHi = Math.max(xHi, x);
     S0 += w; S1 += w * x; S2 += w * x2; S3 += w * x2 * x; S4 += w * x2 * x2;
     T0 += w * L[i]; T1 += w * x * L[i]; T2 += w * x2 * L[i];
   }
@@ -118,12 +123,13 @@ function kpSmooth(f: Float64Array, delta: number): number {
   const Aq = det3(T2, S3, S2, T1, S2, S1, T0, S1, S0) / D;
   const Bq = det3(S4, T2, S2, S3, T1, S1, S2, T0, S0) / D;
   if (!(Aq < 0)) return k[iMax];
-  return Math.exp(xc - Bq / (2 * Aq));
+  // a flat or two-humped top can put the vertex far outside the fitted points; keep it inside them
+  return Math.exp(xc + Math.min(xHi, Math.max(xLo, -Bq / (2 * Aq))));
 }
 
 const backend = localBackend();
 const t0 = Date.now();
-await backend.prepare({ level: accuracy, pMax, pMin, nGrid, model: MODEL_BY_ID[model].solver, kernel, ncal: sc.ncal, sign: sc.sign });
+await backend.prepare({ level: accuracy, pMax, pMin, nGrid, model: MODEL_BY_ID[model].solver, kernel, loopScale, ncal: sc.ncal, sign: sc.sign });
 const C = new Float64Array(k.length), fp = new Float64Array(k.length), fm = new Float64Array(k.length);
 
 /** Instantaneous (m/ħ) d(1/k_p²)/dt at state f, its uncertainty, and the pole indicator. */
@@ -199,7 +205,7 @@ const save = (status: Record<string, unknown>) => {
     schema: 'wke-analysis-run/1',
     meta: { ...meta, wall_s: (Date.now() - t0) / 1000 },
     settings: { state, stateName: preset.name, a_a0: a, model, modelLabel: MODEL_BY_ID[model].label, accuracy, target, pMin, pMax, nGrid,
-      density_um3: density, species: speciesKey, kernel, wallCap_s: wallCap },
+      density_um3: density, species: speciesKey, kernel, loopScale: loopScale ?? 1, wallCap_s: wallCap },
     scales: { kXi_um_inv: kXi, xi_um: sc.xi_um, t0_s: sc.t0_s, hbarOverM_um2_per_s: hbarOverM },
     initial: { kp0_um_inv: kp0, EN_nK },
     points, snapshots: { ...snapshots, k_um_inv: Array.from(k) },

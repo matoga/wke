@@ -1,6 +1,9 @@
 """Make every figure of a study and write its README.
 
-usage: analysis/.venv/bin/python analysis/plots/make_all.py analysis/results/<study>
+usage: analysis/.venv/bin/python analysis/plots/make_all.py analysis/results/<study> [--experiment <data dir>]
+
+A study with an "experiment" field also gets the comparison figures of experiment.py; the data
+folder comes from --experiment or the environment variable WKE_EXPERIMENT_DATA.
 """
 import json
 import os
@@ -13,12 +16,19 @@ import spectra
 import ell
 import rate_vs_a
 import nk_fixed
+import experiment
 
 study_dir = sys.argv[1].rstrip('/')
 study, runs = load_study(study_dir)
 print(f'{os.path.basename(study_dir)}: {len(runs)} runs')
 for mod in (rate, kp_gallery, spectra, ell, rate_vs_a, nk_fixed):
     mod.make(study_dir, study, runs)
+if study.get('experiment'):
+    data = sys.argv[sys.argv.index('--experiment') + 1] if '--experiment' in sys.argv else os.environ.get('WKE_EXPERIMENT_DATA')
+    if data:
+        experiment.make(study_dir, study, runs, data)
+    else:
+        print('  experiment: no data folder (pass --experiment <dir> or set WKE_EXPERIMENT_DATA); comparison figures skipped')
 
 manifest_path = os.path.join(study_dir, 'manifest.json')
 manifest = json.load(open(manifest_path)) if os.path.exists(manifest_path) else {}

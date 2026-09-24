@@ -29,7 +29,13 @@ interface Study {
   snapshots?: number;
   /** 'classical' (default) or 'quantum' (the WKE with the +1 terms) */
   kernel?: string;
-  runs: { state: string; a: number[] }[];
+  /** density n (µm⁻³), default run.ts's 2.8331 */
+  density?: number;
+  species?: string;
+  /** per-a override of target, keyed by a in a₀ (e.g. a box-size stop that scales with k_ξ) */
+  targetByA?: Record<string, number>;
+  /** per-run overrides: density (µm⁻³), target k_ξ/k_p, and a label that names the run file */
+  runs: { state: string; a: number[]; density?: number; target?: number; label?: string }[];
 }
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -45,7 +51,7 @@ mkdirSync(join(dir, 'runs'), { recursive: true });
 copyFileSync(studyPath, join(dir, 'study.json'));
 
 const git = (cmd: string) => { try { return execSync(`git ${cmd}`, { encoding: 'utf8' }).trim(); } catch { return ''; } };
-const jobs = study.runs.flatMap((r) => r.a.map((a) => ({ state: r.state, a })));
+const jobs = study.runs.flatMap((r) => r.a.map((a) => ({ state: r.state, a, density: r.density, target: r.target, label: r.label })));
 const manifest = {
   study: study.name,
   question: study.question,
@@ -59,12 +65,14 @@ const manifest = {
 const writeManifest = () => writeFileSync(join(dir, 'manifest.json'), JSON.stringify(manifest, null, 2));
 writeManifest();
 
-function runOne(job: { state: string; a: number }): Promise<void> {
-  const file = `runs/${job.state}_${job.a}a0_${study.model}.json`;
+function runOne(job: { state: string; a: number; density?: number; target?: number; label?: string }): Promise<void> {
+  const file = `runs/${job.label ? `${job.label}_` : ''}${job.state}_${job.a}a0_${study.model}.json`;
+  const density = job.density ?? study.density;
   const t0 = Date.now();
   const cmd = ['tsx', join(HERE, 'run.ts'), '--state', job.state, '--a', String(job.a), '--model', study.model,
-    '--accuracy', study.accuracy, '--target', String(study.target), '--pmin', String(study.pMin ?? 0.001),
-    '--wall', String(study.wallCap_s), '--snapshots', String(study.snapshots ?? 16), '--kernel', study.kernel ?? 'classical', '--out', join(dir, file)];
+    '--accuracy', study.accuracy, '--target', String(job.target ?? study.targetByA?.[String(job.a)] ?? study.target), '--pmin', String(study.pMin ?? 0.001),
+    '--wall', String(study.wallCap_s), '--snapshots', String(study.snapshots ?? 16), '--kernel', study.kernel ?? 'classical', '--out', join(dir, file),
+    ...(density ? ['--density', String(density)] : []), ...(study.species ? ['--species', study.species] : [])];
   return new Promise((resolve) => {
     const p = spawn('npx', cmd, { stdio: ['ignore', 'inherit', 'inherit'] });
     p.on('close', (code) => {
