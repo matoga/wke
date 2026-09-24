@@ -32,6 +32,51 @@ def load_study(study_dir):
     return study, runs
 
 
+HBAR_JS = 1.054571817e-34
+KB_JK = 1.380649e-23
+
+
+def _g(s, z, terms=100000):
+    """Bose function g_s(z) = Σ z^j / j^s, z ≤ 1 (tail of ζ(s) added at z = 1)."""
+    j = np.arange(1, terms + 1, dtype=float)
+    if z < 1:
+        return float(np.sum(z ** j / j ** s))
+    return float(np.sum(1 / j ** s)) + terms ** (1 - s) / (s - 1)
+
+
+def eta_eq(r):
+    """Condensed fraction of the ideal Bose gas at the run's density and initial kinetic energy per atom,
+    the equilibrium of the WKE with the +1 terms: E/N = (3/2) k_B T ζ(5/2)/(n λ_T³), η = 1 − ζ(3/2)/(n λ_T³);
+    0 above T_c."""
+    n = r['settings']['density_um3'] * 1e18
+    hbar_over_m = r['scales']['hbarOverM_um2_per_s'] * 1e-12
+    E = r['initial']['EN_nK'] * 1e-9 * KB_JK
+    z32, z52 = _g(1.5, 1), _g(2.5, 1)
+    # n λ_T³ with λ_T = √(2πħ²/(m k_B T)) = √(2π ħ (ħ/m) / (k_B T))
+    nl3 = lambda T: n * (2 * np.pi * HBAR_JS * hbar_over_m / (KB_JK * T)) ** 1.5
+    lo, hi = 1e-12, 1e-3
+    for _ in range(200):
+        T = np.sqrt(lo * hi)
+        lo, hi = (T, hi) if 1.5 * KB_JK * T * z52 / nl3(T) < E else (lo, T)
+    return max(0.0, 1 - z32 / nl3(T))
+
+
+def ell_norm(r):
+    """Normalisation of ℓ³ = f(k→0)/(η n): η = η_eq for the Bose +1 kernel, 1 for classical runs
+    (whose Rayleigh-Jeans equilibrium depends on the grid cutoff)."""
+    return eta_eq(r) if r['settings'].get('kernel') == 'quantum' else 1.0
+
+
+def ell_symbol(runs):
+    """How to write the coherence length of a set of runs: ℓ when normalised by η_eq (Bose +1 runs),
+    ℓ̄ when η = 1 (classical runs, or run.ts's raw values). Returns (TeX, text, npz key stem).
+    Mixed sets are refused so that the two are never drawn under one name."""
+    kinds = {ell_norm(r) != 1.0 for r in runs}
+    if len(kinds) > 1:
+        raise ValueError('runs mix ℓ (η_eq-normalised) and ℓ̄ (η = 1); plot them separately')
+    return (r'\ell', 'ℓ', 'ell') if kinds == {True} else (r'\bar{\ell}', 'ℓ̄', 'ellbar')
+
+
 def run_id(r):
     s = r['settings']
     return f"{s['state']}_{s['a_a0']:g}a0_{s['model']}"

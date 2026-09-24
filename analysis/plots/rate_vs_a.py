@@ -1,7 +1,7 @@
 """Rates at fixed progress against the gas parameter and against the energy ratio.
 
 Left column: (m/ħ) d(1/k_p²)/dt at fixed k_ξ/k_p; right column: (m/ħ) dℓ²/dt at fixed ℓ k_ξ
-(ℓ as in ell.py). Top row against n a³, bottom row against √ε = √(gn/(E/N)) = k_ξ/⟨k²⟩^(1/2),
+(ℓ as in ell.py; written ℓ̄ for classical runs, where η = 1). Top row against n a³, bottom row against √ε = √(gn/(E/N)) = k_ξ/⟨k²⟩^(1/2),
 the interaction over kinetic energy per atom of the initial state (conserved by the WKE up to the
 numerical energy drift noted in the README).
 Values are interpolated in log of the progress variable; a run that has not reached a level
@@ -11,7 +11,7 @@ joined by thin lines.
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
-from common import Style, point_kw, save, run_id
+from common import Style, point_kw, save, run_id, ell_symbol
 import ell as ell_mod
 
 A0_UM = 5.29177210903e-5
@@ -44,22 +44,26 @@ def make(study_dir, study, runs):
         kp_rate = [at(p['X'], p['rate'], L) for L in KP_LEVELS]
         kp_err = [at(p['X'], p['rateErr'], L) for L in KP_LEVELS]
         d = ell_mod.series(r)
+        if d:  # same mask as ell.py
+            ok = d[2] <= np.abs(d[1])
+            d = (d[0][ok], d[1][ok], d[2][ok], d[3][ok], d[4])
         ell_rate = [at(d[0], d[1], L) if d else np.nan for L in ELL_LEVELS]
         ell_err = [at(d[0], d[2], L) if d else np.nan for L in ELL_LEVELS]
         rows.append((r, na3, X0, kp_rate, kp_err, ell_rate, ell_err))
 
+    L, Lt, Lk = ell_symbol(runs)
     arrays = {}
     for r, na3, X0, kr, ke, lr, le in rows:
         rid = run_id(r)
         arrays[f'{rid}__na3'] = na3; arrays[f'{rid}__sqrt_gn_over_EN'] = X0
         arrays[f'{rid}__kp_rate'] = np.array(kr); arrays[f'{rid}__kp_rate_err'] = np.array(ke)
-        arrays[f'{rid}__ell_rate'] = np.array(lr); arrays[f'{rid}__ell_rate_err'] = np.array(le)
-    arrays['levels__kxi_over_kp'] = np.array(KP_LEVELS); arrays['levels__ell_kxi'] = np.array(ELL_LEVELS)
+        arrays[f'{rid}__{Lk}_rate'] = np.array(lr); arrays[f'{rid}__{Lk}_rate_err'] = np.array(le)
+    arrays['levels__kxi_over_kp'] = np.array(KP_LEVELS); arrays[f'levels__{Lk}_kxi'] = np.array(ELL_LEVELS)
 
     fig, axes = plt.subplots(2, 2, figsize=(12, 8.4))
     for col, (ri, ei, levels, ylab, lvl) in enumerate((
             (3, 4, KP_LEVELS, r'$(m/\hbar)\,\mathrm{d}(k_p^{-2})/\mathrm{d}t$', r'k_\xi/k_p'),
-            (5, 6, ELL_LEVELS, r'$(m/\hbar)\,\mathrm{d}\ell^{2}/\mathrm{d}t$', r'\ell k_\xi'))):
+            (5, 6, ELL_LEVELS, rf'$(m/\hbar)\,\mathrm{{d}}{L}^{{2}}/\mathrm{{d}}t$', rf'{L} k_\xi'))):
         for row, (xi, xlab) in enumerate(((1, r'$n a^3$'), (2, r'$\sqrt{gn/(E/N)} = k_\xi/\langle k^2\rangle^{1/2}$'))):
             ax = axes[row, col]
             for j, L in enumerate(levels):

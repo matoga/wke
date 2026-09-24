@@ -11,8 +11,9 @@
  *       dk_p/dτ = [k_p(f + εC) − k_p(f − εC)] / 2ε,  C = ∂τ f,  d(1/k_p²)/dt = −2 k_p⁻³ dk_p/dτ / t₀,
  *     with an uncertainty from two peak-fit widths (δ = 0.02, 0.05) and two steps (ε, 2ε),
  *   - the largest resummed weight (pole indicator),
- *   - the coherence length ℓ = (f(k→0)/n)^(1/3), f(k→0) from a fit ln f = A + B k² over k ≤ k_p/5,
- *     and (m/ħ) dℓ²/dt, also from the collision term,
+ *   - the length ℓ̄ = (f(k→0)/n)^(1/3) (fields ell_um, ellRate, ellRateErr), f(k→0) from a fit
+ *     ln f = A + B k² over k ≤ k_p/5, and (m/ħ) dℓ̄²/dt, also from the collision term; the plots turn
+ *     it into the coherence length ℓ = ℓ̄ η_eq^(−1/3) for Bose +1 runs,
  * and the occupation n_k at `snapshots` times spaced evenly in log(k_ξ/k_p).
  * The file is rewritten every 30 s, so a stopped run keeps what it reached.
  */
@@ -160,8 +161,8 @@ function f0Fit(f: Float64Array, kMax: number): number {
 }
 
 /**
- * Coherence length from the zero-momentum occupation, ℓ³ = f(k→0)/n (ℓ³ = V in equilibrium),
- * and (m/ħ) dℓ²/dt = (2/3) ℓ² (∂τ f₀/f₀) / t₀, with ∂τ f₀ from the fit applied to f ± εC
+ * ℓ̄³ = f(k→0)/n from the zero-momentum occupation (η = 1; the plots divide by η_eq for ℓ),
+ * and (m/ħ) dℓ̄²/dt = (2/3) ℓ̄² (∂τ f₀/f₀) / t₀, with ∂τ f₀ from the fit applied to f ± εC
  * (C the collision term left by rateAt). f₀ is fitted over k ≤ k_p/5; the uncertainty is the
  * spread over the fit windows k_p/5 and k_p/10 and the steps ε and 2ε.
  */

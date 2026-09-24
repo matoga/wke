@@ -39,8 +39,13 @@ commit and whether solver files had uncommitted changes, timings, status of ever
 - **The rate** (m/ħ) d(1/k_p²)/dt is taken at each sample from the collision term itself: the
   smooth peak k_p is differentiated along df/dτ. No time window is used, so fast late
   evolution is resolved. The error bar is the spread over two peak-fit widths and two steps.
-- **The coherence length** is ℓ = (f(k→0)/n)^(1/3), f the occupation per mode and n the density,
-  so that ℓ³ = V in equilibrium. f₀ = f(k→0) is e^A from a least-squares fit ln f = A + B k² over
+- **The coherence length** is ℓ³ = f(k→0)/(η n), f the occupation per mode, n the density and η the
+  equilibrium condensed fraction, so that ℓ³ = V in equilibrium. For Bose +1 runs η = η_eq, the
+  ideal-Bose condensed fraction at the run's n and initial E/N; classical runs use η = 1, because
+  their Rayleigh-Jeans equilibrium depends on the grid cutoff. **Notation:** the length with η = 1,
+  ℓ̄³ = f(k→0)/n, is always written ℓ̄ (classical runs, and the raw `ell_um`, `ellRate`, `ellRateErr`
+  fields that `run.ts` stores); ℓ is reserved for the η_eq-normalised length. Figures and `.npz` keys
+  follow this (`ellbar_*` against `ell_*`), and a figure refuses to mix the two. f₀ = f(k→0) is e^A from a least-squares fit ln f = A + B k² over
   all grid points with k ≤ k_p/5 (the low-k plateau), and (m/ħ) dℓ²/dt is taken from the
   collision term through the same fit at every rate sample. The error bar is the spread over the
   fit windows k_p/5 and k_p/10 and two steps. Runs made before this was recorded fall back to finite differences
