@@ -6,6 +6,8 @@
 import presetsJson from '../../shared-data/presets.json';
 import measuredBJson from '../../shared-data/measured-state-b.json';
 import measuredCJson from '../../shared-data/measured-states-c.json';
+import measuredDJson from '../../shared-data/measured-state-d.json';
+import measuredDSeries1Json from '../../shared-data/measured-states-d-series1.json';
 import { prepareSpectrum } from './spectrum';
 import type { PreparedSpectrum } from './spectrum';
 
@@ -144,13 +146,14 @@ function syntheticPreset({
 }
 
 function measuredNkPreset({
-  key, name, description, data, kMax_um_inv,
+  key, name, description, data, kMax_um_inv, density_um3 = DEFAULT_DENSITY_UM3,
 }: {
   key: string;
   name: string;
   description: string;
   data: { k_um_inv: number[]; n_k: number[] };
   kMax_um_inv: number;
+  density_um3?: number;
 }): Preset {
   const retained = data.k_um_inv
     .map((k, index) => ({ k, n: data.n_k[index] }))
@@ -161,7 +164,7 @@ function measuredNkPreset({
   }, { k: retained[0].k, shell: -Infinity });
   return {
     key, name, description, kp_um_inv: peak.k,
-    defaultDensity_um3: DEFAULT_DENSITY_UM3,
+    defaultDensity_um3: density_um3,
     defaultA_a0: DEFAULT_A_A0,
     hideImportNotes: true,
     load: () => prepareSpectrum({
@@ -195,6 +198,28 @@ const measuredB = measuredNkPreset({
   data: measuredBJson,
   kMax_um_inv: 4,
 });
+
+// average of the ten t = 0 spectra of the quench-cooled box (built by the analysis tools, see analysis/README),
+// cut at its first negative point: this keeps E/N = 11.7 nK, as measured (clipping the noisy tail adds 10%)
+const measuredD = measuredNkPreset({
+  key: 'measured_d',
+  name: 'Measured state D',
+  description: 'Measured n_k at t = 0 after quench cooling in a box, averaged over ten repeats.',
+  data: measuredDJson,
+  kMax_um_inv: 4.35,
+  density_um3: measuredDJson.density_um3,
+});
+
+// the t = 0 spectrum measured with each a of the first series of the same experiment, ln n_k interpolated
+// smoothly through the points above twice their error, each with its own N/V
+const measuredDSeries1: Preset[] = (['150', '300', '600'] as const).map((a) => measuredNkPreset({
+  key: `measured_d${a}`,
+  name: `Measured state D, ${a} a₀`,
+  description: `Measured n_k at t = 0 after quench cooling in a box, the repeat taken with a = ${a} a₀, smoothed.`,
+  data: measuredDSeries1Json[a],
+  kMax_um_inv: 5.4,
+  density_um3: measuredDSeries1Json[a].density_um3,
+}));
 
 const measuredC: Preset[] = (['C1', 'C2', 'C3'] as const).map((id) => measuredNkPreset({
   key: `measured_${id.toLowerCase()}`,
@@ -250,6 +275,8 @@ export const PRESETS: Preset[] = [
   ...fixturePresets.slice(preparedDIndex + 1),
   measuredB,
   ...measuredC,
+  measuredD,
+  ...measuredDSeries1,
   ...exploratoryPresets,
 ];
 

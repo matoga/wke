@@ -23,7 +23,16 @@ interface Study {
   question: string;
   model: string;
   accuracy: string;
-  target: number;
+  /** stop at k_ξ/k_p = target; may be left out when tmax_ms is given */
+  target?: number;
+  /** stop at this physical time (ms) */
+  tmax_ms?: number;
+  /** n_k snapshots at these times (ms) instead of at log(k_ξ/k_p) targets */
+  snapTimes_ms?: number[];
+  /** 'stop' ends a run when the model breaks down (e.g. a negative one-loop bracket); default 'continue' */
+  breakdown?: string;
+  /** stop a run when N or E leaves 1 ± maxDrift of its initial value */
+  maxDrift?: number;
   pMin?: number;
   wallCap_s: number;
   snapshots?: number;
@@ -35,7 +44,7 @@ interface Study {
   /** per-a override of target, keyed by a in a₀ (e.g. a box-size stop that scales with k_ξ) */
   targetByA?: Record<string, number>;
   /** per-run overrides: density (µm⁻³), target k_ξ/k_p, and a label that names the run file */
-  runs: { state: string; a: number[]; density?: number; target?: number; label?: string }[];
+  runs: { state: string; a: number[]; density?: number; target?: number; label?: string; tmax_ms?: number; snapTimes_ms?: number[] }[];
 }
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -44,6 +53,9 @@ const studyPath = argv[0];
 if (!studyPath) throw new Error('usage: npx tsx analysis/study.ts analysis/studies/<name>.json');
 const parallel = Number(argv[argv.indexOf('--parallel') + 1] || 0) || Math.min(8, cpus().length);
 const study: Study = JSON.parse(readFileSync(studyPath, 'utf8'));
+if (study.target === undefined && study.tmax_ms === undefined && study.runs.some((r) => r.target === undefined && r.tmax_ms === undefined && !study.targetByA)) {
+  throw new Error('every run needs a target or tmax_ms');
+}
 
 const date = new Date().toISOString().slice(0, 10);
 const dir = join(HERE, 'results', `${date}_${study.name}`);
@@ -51,7 +63,9 @@ mkdirSync(join(dir, 'runs'), { recursive: true });
 copyFileSync(studyPath, join(dir, 'study.json'));
 
 const git = (cmd: string) => { try { return execSync(`git ${cmd}`, { encoding: 'utf8' }).trim(); } catch { return ''; } };
-const jobs = study.runs.flatMap((r) => r.a.map((a) => ({ state: r.state, a, density: r.density, target: r.target, label: r.label })));
+type Job = { state: string; a: number; density?: number; target?: number; label?: string; tmax_ms?: number; snapTimes_ms?: number[] };
+const jobs: Job[] = study.runs.flatMap((r) => r.a.map((a) => ({ state: r.state, a, density: r.density, target: r.target, label: r.label,
+  tmax_ms: r.tmax_ms, snapTimes_ms: r.snapTimes_ms })));
 const manifest = {
   study: study.name,
   question: study.question,
@@ -65,14 +79,19 @@ const manifest = {
 const writeManifest = () => writeFileSync(join(dir, 'manifest.json'), JSON.stringify(manifest, null, 2));
 writeManifest();
 
-function runOne(job: { state: string; a: number; density?: number; target?: number; label?: string }): Promise<void> {
+function runOne(job: Job): Promise<void> {
   const file = `runs/${job.label ? `${job.label}_` : ''}${job.state}_${job.a}a0_${study.model}.json`;
   const density = job.density ?? study.density;
   const t0 = Date.now();
+  const target = job.target ?? study.targetByA?.[String(job.a)] ?? study.target;
+  const tmax = job.tmax_ms ?? study.tmax_ms, snapTimes = job.snapTimes_ms ?? study.snapTimes_ms;
   const cmd = ['tsx', join(HERE, 'run.ts'), '--state', job.state, '--a', String(job.a), '--model', study.model,
-    '--accuracy', study.accuracy, '--target', String(job.target ?? study.targetByA?.[String(job.a)] ?? study.target), '--pmin', String(study.pMin ?? 0.001),
+    '--accuracy', study.accuracy, ...(target !== undefined ? ['--target', String(target)] : []), '--pmin', String(study.pMin ?? 0.001),
     '--wall', String(study.wallCap_s), '--snapshots', String(study.snapshots ?? 16), '--kernel', study.kernel ?? 'classical', '--out', join(dir, file),
-    ...(density ? ['--density', String(density)] : []), ...(study.species ? ['--species', study.species] : [])];
+    ...(density ? ['--density', String(density)] : []), ...(study.species ? ['--species', study.species] : []),
+    ...(tmax !== undefined ? ['--tmax_ms', String(tmax)] : []), ...(snapTimes ? ['--snapTimes_ms', snapTimes.join(',')] : []),
+    ...(study.breakdown ? ['--breakdown', study.breakdown] : []),
+    ...(study.maxDrift !== undefined ? ['--maxDrift', String(study.maxDrift)] : [])];
   return new Promise((resolve) => {
     const p = spawn('npx', cmd, { stdio: ['ignore', 'inherit', 'inherit'] });
     p.on('close', (code) => {

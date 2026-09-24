@@ -1,0 +1,32 @@
+{
+  "study": "bidir-chain-series1-own-state-standard",
+  "question": "UV clock of the bubble chain (N → ∞, rung weight 1, Bose +1) at standard accuracy: the t = 0 state measured with each a (series 1), smoothed, with its own N/V, at a = 150, 300, 600 a₀ (the values of measured series 1), each run to t ā = 320 ms (ā = a/300 a₀), stopped if N or E drifts by more than 10%. Energy conservation is needed for the UV exponents and for p_UV in t → t ā^p, measured 1.1(1).",
+  "command": "npx tsx analysis/study.ts analysis/studies/bidir-chain-series1-own-state-standard.json --parallel 3 --no-plots",
+  "gitCommit": "d02a10f",
+  "gitDirty": true,
+  "started": "2026-09-24T20:51:11.987Z",
+  "finished": "2026-09-24T21:00:40.066Z",
+  "runs": [
+    {
+      "file": "runs/measured_d150_150a0_chain.json",
+      "state": "measured_d150",
+      "a": 150,
+      "exitCode": 0,
+      "wall_s": 334.053
+    },
+    {
+      "file": "runs/measured_d300_300a0_chain.json",
+      "state": "measured_d300",
+      "a": 300,
+      "exitCode": 0,
+      "wall_s": 511.72
+    },
+    {
+      "file": "runs/measured_d600_600a0_chain.json",
+      "state": "measured_d600",
+      "a": 600,
+      "exitCode": 0,
+      "wall_s": 568.074
+    }
+  ]
+}

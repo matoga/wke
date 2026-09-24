@@ -1,0 +1,81 @@
+{
+  "study": "bidir-oneloop-classical",
+  "question": "Quench-cooled box of 39K (the published bidirectional scaling measurements): the averaged measured t = 0 state, N/V = 1.3170 µm⁻³, evolved to 2560 ms at the ten measured values of a. Do the IR and UV collapse with t → t (a/300 a₀)^p, and with which p, compared with the measured p_IR = 0.9(1) and p_UV = 1.1(1)? One loop, classical kernel (the +1 is not defined for its particle-particle bubble). Stops at breakdown (negative bracket).",
+  "command": "npx tsx analysis/study.ts analysis/studies/bidir-oneloop-classical.json --no-plots",
+  "gitCommit": "d02a10f",
+  "gitDirty": true,
+  "started": "2026-09-24T18:48:14.440Z",
+  "finished": "2026-09-24T18:48:19.101Z",
+  "runs": [
+    {
+      "file": "runs/measured_d_400a0_one-loop.json",
+      "state": "measured_d",
+      "a": 400,
+      "exitCode": 0,
+      "wall_s": 2.96
+    },
+    {
+      "file": "runs/measured_d_570a0_one-loop.json",
+      "state": "measured_d",
+      "a": 570,
+      "exitCode": 0,
+      "wall_s": 2.978
+    },
+    {
+      "file": "runs/measured_d_300a0_one-loop.json",
+      "state": "measured_d",
+      "a": 300,
+      "exitCode": 0,
+      "wall_s": 3.005
+    },
+    {
+      "file": "runs/measured_d_150a0_one-loop.json",
+      "state": "measured_d",
+      "a": 150,
+      "exitCode": 0,
+      "wall_s": 3.032
+    },
+    {
+      "file": "runs/measured_d_100a0_one-loop.json",
+      "state": "measured_d",
+      "a": 100,
+      "exitCode": 0,
+      "wall_s": 3.035
+    },
+    {
+      "file": "runs/measured_d_200a0_one-loop.json",
+      "state": "measured_d",
+      "a": 200,
+      "exitCode": 0,
+      "wall_s": 3.054
+    },
+    {
+      "file": "runs/measured_d_280a0_one-loop.json",
+      "state": "measured_d",
+      "a": 280,
+      "exitCode": 0,
+      "wall_s": 3.067
+    },
+    {
+      "file": "runs/measured_d_140a0_one-loop.json",
+      "state": "measured_d",
+      "a": 140,
+      "exitCode": 0,
+      "wall_s": 3.079
+    },
+    {
+      "file": "runs/measured_d_600a0_one-loop.json",
+      "state": "measured_d",
+      "a": 600,
+      "exitCode": 0,
+      "wall_s": 1.689
+    },
+    {
+      "file": "runs/measured_d_800a0_one-loop.json",
+      "state": "measured_d",
+      "a": 800,
+      "exitCode": 0,
+      "wall_s": 1.666
+    }
+  ]
+}

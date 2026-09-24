@@ -1,0 +1,39 @@
+{
+  "study": "bidir-chain-uv-standard",
+  "question": "UV clock of the bubble chain (N → ∞, rung weight 1, Bose +1) at standard accuracy: the averaged measured t = 0 state of the quench-cooled box at a = 100, 140, 200, 280 a₀, each run to t ā = 320 ms (ā = a/300 a₀), stopped if N or E drifts by more than 5%. Energy conservation is needed for the UV exponents and for p_UV in t → t ā^p, measured 1.1(1).",
+  "command": "npx tsx analysis/study.ts analysis/studies/bidir-chain-uv-standard.json --parallel 4 --no-plots",
+  "gitCommit": "d02a10f",
+  "gitDirty": true,
+  "started": "2026-09-24T19:45:11.915Z",
+  "finished": "2026-09-24T19:53:01.714Z",
+  "runs": [
+    {
+      "file": "runs/measured_d_280a0_chain.json",
+      "state": "measured_d",
+      "a": 280,
+      "exitCode": 0,
+      "wall_s": 217.021
+    },
+    {
+      "file": "runs/measured_d_100a0_chain.json",
+      "state": "measured_d",
+      "a": 100,
+      "exitCode": 0,
+      "wall_s": 276.688
+    },
+    {
+      "file": "runs/measured_d_200a0_chain.json",
+      "state": "measured_d",
+      "a": 200,
+      "exitCode": 0,
+      "wall_s": 422.117
+    },
+    {
+      "file": "runs/measured_d_140a0_chain.json",
+      "state": "measured_d",
+      "a": 140,
+      "exitCode": 0,
+      "wall_s": 469.796
+    }
+  ]
+}

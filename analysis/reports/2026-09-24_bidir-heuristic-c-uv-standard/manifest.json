@@ -1,0 +1,39 @@
+{
+  "study": "bidir-heuristic-c-uv-standard",
+  "question": "UV clock of heuristic C (bubble chain with rung weight 1.85, Bose +1) at standard accuracy: the averaged measured t = 0 state of the quench-cooled box at a = 50, 100, 140, 200 a₀, each run to t ā = 320 ms (ā = a/300 a₀), stopped if N or E drifts by more than 5%. Energy conservation is needed for the UV exponents and for p_UV in t → t ā^p, measured 1.1(1).",
+  "command": "npx tsx analysis/study.ts analysis/studies/bidir-heuristic-c-uv-standard.json --parallel 4 --no-plots",
+  "gitCommit": "d02a10f",
+  "gitDirty": true,
+  "started": "2026-09-24T19:59:42.407Z",
+  "finished": "2026-09-24T20:02:12.499Z",
+  "runs": [
+    {
+      "file": "runs/measured_d_50a0_heuristic-c.json",
+      "state": "measured_d",
+      "a": 50,
+      "exitCode": 0,
+      "wall_s": 96.192
+    },
+    {
+      "file": "runs/measured_d_140a0_heuristic-c.json",
+      "state": "measured_d",
+      "a": 140,
+      "exitCode": 0,
+      "wall_s": 133.912
+    },
+    {
+      "file": "runs/measured_d_200a0_heuristic-c.json",
+      "state": "measured_d",
+      "a": 200,
+      "exitCode": 0,
+      "wall_s": 140.761
+    },
+    {
+      "file": "runs/measured_d_100a0_heuristic-c.json",
+      "state": "measured_d",
+      "a": 100,
+      "exitCode": 0,
+      "wall_s": 150.089
+    }
+  ]
+}

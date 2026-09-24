@@ -80,6 +80,77 @@ The published ℓ uses the same normalisation as ℓ here at early times but car
 that is not undone; the published n_k is per volume, n_k = V f/(2π)³; the published spectra of
 series 1 to 3 are labelled by t − t*.
 
+## Bidirectional scaling experiment
+
+A study with a `bidirectional` field is compared with the published measurements of bidirectional
+dynamic scaling in a quench-cooled box of ³⁹K: N ≈ 2.7×10⁴ atoms in a cylinder of diameter 25 µm and
+length 42 µm, E/N ≈ 12 nK, with a = 100 to 800 a₀ switched on at t = 0. The data folder is not in the
+repository: pass it as `make_all.py <study> --bidir-data <dir>` or set `WKE_BIDIR_DATA`.
+
+- **Initial state.** `Measured state D` (`measured_d`) is the average of the ten measured t = 0 spectra.
+  Every a starts from the same state, because the state is prepared with a → 0. It is built by
+  `plots/bidir_initial.py` into `shared-data/measured-state-d.json` and holds N/V = 1.317 µm⁻³. The
+  spectrum is cut at its first negative point (4.35 µm⁻¹), which keeps the measured E/N = 11.7 nK;
+  clipping the noisy tail to zero would add 10%.
+- **Runs.** They stop at a physical time (`tmax_ms`, 2560 ms) and take snapshots at given times
+  (`snapTimes_ms`). These are 20 per decade, plus the measured times t and t (300 a₀/a), so that
+  comparisons at equal t ā need no interpolation. A stop at k_ξ/k_p = 300 ends a run that blows up;
+  `breakdown: "stop"` ends a one-loop run when its bracket turns negative.
+- **Analysis.** `plots/bidir_fit.py` treats the WKE and the measured n_k alike. Applied to the data, it
+  reproduces:
+  - the published α and β at 150, 300 and 600 a₀, within their errors;
+  - p_IR, p_UV = 0.93(11), 1.25(39) from series 1 and 1.00(2), 1.13(13) from series 2, against the
+    published 0.9(1) and 1.1(1);
+  - T_low at every time;
+  - N_QC from 80 ms on, and Δ_k at every time.
+
+  The definitions it uses:
+  - T_peak: ħ²k_peak²/2m = 1.594 k_B T, the peak of a μ = 0 Bose E_k;
+  - T_low: E_k = 4πV k_B T k²/(2π)³, fitted over 0.5 to 1.2 µm⁻¹;
+  - N_QC: the intercept of a line fitted to F_k over 0.8 to 1.2 µm⁻¹;
+  - Δ_k: the k where F_k minus the fitted thermal line reaches N_QC/2.
+- **Figures.**
+  - `bidir_spectra`: N_k and E_k at 300 a₀.
+  - `bidir_temps`: T_peak and T_low.
+  - `bidir_condensate`: N_QC/N and Δ_k against t ā.
+  - `bidir_exponents`: α_IR/3, β_IR, α_UV/5, β_UV per a.
+  - `bidir_collapse`: the IR and UV collapse.
+  - `bidir_clock`: the clock exponent p of t → t (a/300 a₀)^p in two ways. First, the best collapse of
+    all a together over t ā ∈ [20, 160] ms. Second, p = −d ln t_level/d ln a, from the time at which
+    each a reaches a level of N_QC/N (IR) or T_peak (UV), plotted against the stage of the evolution.
+  - `plots/bidir_summary.json` holds the fitted numbers.
+- **Limits.**
+  - The WKE has no box, so it has no Heisenberg floor Δ_k^H ≈ 0.2 µm⁻¹.
+  - The published n_k carries the time-of-flight resolution; the WKE is compared from the first
+    measured bin (0.028 µm⁻¹) on.
+  - The bare WKE with Bose +1 blows up in finite time at the onset of condensation.
+  - The one-loop model is run classically, because the +1 is not defined for its particle-particle
+    bubble.
+
+### Findings (reports of 2026-09-24)
+
+- **Measured clock.** The fits reproduce the published exponents. Matching the measured E_k of 150, 300
+  and 600 a₀ at equal t (a/300 a₀)^p gives p = 1.15 ± 0.05 (`bidir_p_optimal`). A time offset (coil
+  lag) δt raises the best p roughly linearly: 1.2 at 0 ms, 1.5 at 10 ms, about 2 only at 19 ms
+  (`bidir_coil_lag_scan`).
+- **Bare WKE with Bose +1** blows up at the onset of condensation, at exactly t = 23.8 ms (300 a₀/a)²,
+  so p = 2 and no scaling window is reached.
+- **One loop (classical)** breaks down at t = 0 for every a. Its bracket is negative on 43 to 99 % of the
+  collision weight: k_ξ/k_p ≈ 0.7 to 1.2 is outside perturbation theory.
+- **Bubble chain (large-N, Bose +1) and heuristic C** give the measured UV exponents (α_UV ≈ −0.66,
+  β_UV ≈ −0.14). Their clock is near a² at 100 to 280 a₀, both from the collapse and from the energy peak
+  k_E.
+- **Large-N started from each a's own measured t = 0 state** (150, 300, 600 a₀) crosses over from p ≈ 2.2
+  (150 to 300 a₀) to p ≈ 1.4 (300 to 600 a₀). The measured values are 1.35 and 0.95. Overall p = 1.8,
+  against 1.15 measured, and the model is about twice as fast as the data.
+- **Initial states.** The averaged state `measured_d` carries a lumpy UV tail from the noisy series 2
+  spectra. That distorts the energy-peak clock, so use the per-a states `measured_d150/300/600`
+  (`bidir_initial.py --series1`: ln n_k interpolated monotonically through the points above 2σ).
+- **Energy drift of the bubble chain.** The drift grows with a and time. At standard accuracy E rises
+  1.5 to 4 % by t ā = 160 ms and 9 % by 320 ms at 300 a₀; the draft study reached ×2 to ×12 by t ā ≈ 2 s.
+  Runs therefore use `maxDrift`, and late-time results of the draft study are not physical.
+- **Extra figures** (k_E clocks, optimal p, coil lag, E_k videos) come from `plots/bidir_extra/`.
+
 ## Known issues
 
 - **Kinetic energy drift** (found 2026-09-24 in `chain-standard-3states`, bubble chain, standard

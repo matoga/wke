@@ -1,0 +1,81 @@
+{
+  "study": "bidir-bare-quantum",
+  "question": "Quench-cooled box of 39K (the published bidirectional scaling measurements): the averaged measured t = 0 state, N/V = 1.3170 µm⁻³, evolved to 2560 ms at the ten measured values of a. Do the IR and UV collapse with t → t (a/300 a₀)^p, and with which p, compared with the measured p_IR = 0.9(1) and p_UV = 1.1(1)? Bare WKE with the Bose +1 terms. It blows up in finite time at the onset of condensation (k_p runs to the grid floor); the stop at k_ξ/k_p = 300 ends the run there.",
+  "command": "npx tsx analysis/study.ts analysis/studies/bidir-bare-quantum.json --no-plots",
+  "gitCommit": "d02a10f",
+  "gitDirty": true,
+  "started": "2026-09-24T18:48:03.826Z",
+  "finished": "2026-09-24T18:48:13.858Z",
+  "runs": [
+    {
+      "file": "runs/measured_d_280a0_bare.json",
+      "state": "measured_d",
+      "a": 280,
+      "exitCode": 0,
+      "wall_s": 6.519
+    },
+    {
+      "file": "runs/measured_d_140a0_bare.json",
+      "state": "measured_d",
+      "a": 140,
+      "exitCode": 0,
+      "wall_s": 6.527
+    },
+    {
+      "file": "runs/measured_d_300a0_bare.json",
+      "state": "measured_d",
+      "a": 300,
+      "exitCode": 0,
+      "wall_s": 6.536
+    },
+    {
+      "file": "runs/measured_d_200a0_bare.json",
+      "state": "measured_d",
+      "a": 200,
+      "exitCode": 0,
+      "wall_s": 6.712
+    },
+    {
+      "file": "runs/measured_d_100a0_bare.json",
+      "state": "measured_d",
+      "a": 100,
+      "exitCode": 0,
+      "wall_s": 6.738
+    },
+    {
+      "file": "runs/measured_d_400a0_bare.json",
+      "state": "measured_d",
+      "a": 400,
+      "exitCode": 0,
+      "wall_s": 6.74
+    },
+    {
+      "file": "runs/measured_d_150a0_bare.json",
+      "state": "measured_d",
+      "a": 150,
+      "exitCode": 0,
+      "wall_s": 6.812
+    },
+    {
+      "file": "runs/measured_d_570a0_bare.json",
+      "state": "measured_d",
+      "a": 570,
+      "exitCode": 0,
+      "wall_s": 6.838
+    },
+    {
+      "file": "runs/measured_d_800a0_bare.json",
+      "state": "measured_d",
+      "a": 800,
+      "exitCode": 0,
+      "wall_s": 3.438
+    },
+    {
+      "file": "runs/measured_d_600a0_bare.json",
+      "state": "measured_d",
+      "a": 600,
+      "exitCode": 0,
+      "wall_s": 3.503
+    }
+  ]
+}
