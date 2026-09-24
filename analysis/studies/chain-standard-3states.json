@@ -1,0 +1,15 @@
+{
+  "name": "chain-standard-3states",
+  "question": "Bubble chain (N → ∞) at standard accuracy: the rate (m/ħ) d(1/k_p²)/dt against k_ξ/k_p up to about 30, for three initial states spanning 8 to 25 nK and a from 10 to 300 a₀.",
+  "model": "chain",
+  "accuracy": "standard",
+  "target": 30,
+  "pMin": 0.001,
+  "wallCap_s": 2700,
+  "snapshots": 16,
+  "runs": [
+    { "state": "measured_b", "a": [10, 30, 100, 300] },
+    { "state": "gaussian_shell", "a": [10, 30, 100, 300] },
+    { "state": "prepared_a", "a": [10, 30, 100, 300] }
+  ]
+}

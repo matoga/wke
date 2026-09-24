@@ -27,6 +27,8 @@ interface Study {
   pMin?: number;
   wallCap_s: number;
   snapshots?: number;
+  /** 'classical' (default) or 'quantum' (the WKE with the +1 terms) */
+  kernel?: string;
   runs: { state: string; a: number[] }[];
 }
 
@@ -62,7 +64,7 @@ function runOne(job: { state: string; a: number }): Promise<void> {
   const t0 = Date.now();
   const cmd = ['tsx', join(HERE, 'run.ts'), '--state', job.state, '--a', String(job.a), '--model', study.model,
     '--accuracy', study.accuracy, '--target', String(study.target), '--pmin', String(study.pMin ?? 0.001),
-    '--wall', String(study.wallCap_s), '--snapshots', String(study.snapshots ?? 16), '--out', join(dir, file)];
+    '--wall', String(study.wallCap_s), '--snapshots', String(study.snapshots ?? 16), '--kernel', study.kernel ?? 'classical', '--out', join(dir, file)];
   return new Promise((resolve) => {
     const p = spawn('npx', cmd, { stdio: ['ignore', 'inherit', 'inherit'] });
     p.on('close', (code) => {

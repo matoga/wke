@@ -10,11 +10,14 @@ from common import load_study, run_id
 import rate
 import kp_gallery
 import spectra
+import ell
+import rate_vs_a
+import nk_fixed
 
 study_dir = sys.argv[1].rstrip('/')
 study, runs = load_study(study_dir)
 print(f'{os.path.basename(study_dir)}: {len(runs)} runs')
-for mod in (rate, kp_gallery, spectra):
+for mod in (rate, kp_gallery, spectra, ell, rate_vs_a, nk_fixed):
     mod.make(study_dir, study, runs)
 
 manifest_path = os.path.join(study_dir, 'manifest.json')

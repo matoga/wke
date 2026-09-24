@@ -3,6 +3,7 @@
  *
  *   npx tsx analysis/run.ts --state gaussian_shell --a 25 --model chain --accuracy draft \
  *     --target 25 --out analysis/results/<study>/runs/<name>.json [--pmin 0.001] [--wall 300] [--snapshots 16]
+ *     [--kernel classical|quantum]   (quantum: the WKE with the +1 terms; default classical)
  *
  * Records, at samples spaced by 0.02 decades in k_ξ/k_p:
  *   - the smooth peak k_p (weighted parabola fit of ln(k² n_k) against ln k),
@@ -10,6 +11,8 @@
  *       dk_p/dτ = [k_p(f + εC) − k_p(f − εC)] / 2ε,  C = ∂τ f,  d(1/k_p²)/dt = −2 k_p⁻³ dk_p/dτ / t₀,
  *     with an uncertainty from two peak-fit widths (δ = 0.02, 0.05) and two steps (ε, 2ε),
  *   - the largest resummed weight (pole indicator),
+ *   - the coherence length ℓ = (f(k→0)/n)^(1/3), f(k→0) from a fit ln f = A + B k² over k ≤ k_p/5,
+ *     and (m/ħ) dℓ²/dt, also from the collision term,
  * and the occupation n_k at `snapshots` times spaced evenly in log(k_ξ/k_p).
  * The file is rewritten every 30 s, so a stopped run keeps what it reached.
  */
@@ -29,6 +32,7 @@ import { PRECISION } from '../src/physics/precision';
 import type { AccuracyLevel } from '../src/physics/precision';
 import { MODEL_BY_ID } from '../src/physics/models';
 import type { ModelId } from '../src/physics/models';
+import type { KernelType } from '../src/physics/collision';
 
 function args(): Record<string, string> {
   const out: Record<string, string> = {};
@@ -42,8 +46,13 @@ for (const k of ['state', 'a', 'model', 'accuracy', 'target', 'out']) {
 }
 const state = A.state, a = Number(A.a), model = A.model as ModelId, accuracy = A.accuracy as AccuracyLevel;
 const target = Number(A.target), out = A.out;
+if (A.kernel === 'quantum' && !MODEL_BY_ID[model].allowsQuantum) {
+  throw new Error(`--kernel quantum: model ${model} has no quantum kernel (the solver would run it classical)`);
+}
 const pMin = Number(A.pmin ?? 0.001), wallCap = Number(A.wall ?? 600), nSnap = Number(A.snapshots ?? 16);
 const density = Number(A.density ?? 2.8331), speciesKey = A.species ?? 'K39';
+const kernel = (A.kernel ?? 'classical') as KernelType;
+if (kernel !== 'classical' && kernel !== 'quantum') throw new Error(`unknown --kernel ${kernel}`);
 
 const git = (cmd: string) => { try { return execSync(`git ${cmd}`, { encoding: 'utf8' }).trim(); } catch { return ''; } };
 const meta = {
@@ -113,7 +122,7 @@ function kpSmooth(f: Float64Array, delta: number): number {
 
 const backend = localBackend();
 const t0 = Date.now();
-await backend.prepare({ level: accuracy, pMax, pMin, nGrid, model: MODEL_BY_ID[model].solver, kernel: 'classical', ncal: sc.ncal, sign: sc.sign });
+await backend.prepare({ level: accuracy, pMax, pMin, nGrid, model: MODEL_BY_ID[model].solver, kernel, ncal: sc.ncal, sign: sc.sign });
 const C = new Float64Array(k.length), fp = new Float64Array(k.length), fm = new Float64Array(k.length);
 
 /** Instantaneous (m/ħ) d(1/k_p²)/dt at state f, its uncertainty, and the pole indicator. */
@@ -138,7 +147,46 @@ function rateAt(f: Float64Array): [number, number, number, number] {
   return [kXi / kp, est[0], err, diag.poleIndicator];
 }
 
-const points = { t_s: [] as number[], X: [] as number[], rate: [] as number[], rateErr: [] as number[], poleWeight: [] as number[] };
+/** f(k→0): least-squares fit ln f = A + B k² over all grid points with k ≤ kMax; returns e^A. */
+function f0Fit(f: Float64Array, kMax: number): number {
+  let S0 = 0, S1 = 0, S2 = 0, T0 = 0, T1 = 0;
+  for (let i = 0; i < k.length && k[i] <= kMax; i++) {
+    if (!(f[i] > 0)) continue;
+    const x = k[i] * k[i], y = Math.log(f[i]);
+    S0 += 1; S1 += x; S2 += x * x; T0 += y; T1 += x * y;
+  }
+  if (S0 < 3) return f[0];
+  return Math.exp((T0 * S2 - T1 * S1) / (S0 * S2 - S1 * S1));
+}
+
+/**
+ * Coherence length from the zero-momentum occupation, ℓ³ = f(k→0)/n (ℓ³ = V in equilibrium),
+ * and (m/ħ) dℓ²/dt = (2/3) ℓ² (∂τ f₀/f₀) / t₀, with ∂τ f₀ from the fit applied to f ± εC
+ * (C the collision term left by rateAt). f₀ is fitted over k ≤ k_p/5; the uncertainty is the
+ * spread over the fit windows k_p/5 and k_p/10 and the steps ε and 2ε.
+ */
+function ellAt(f: Float64Array, kp: number): [number, number, number] {
+  const f0 = f0Fit(f, kp / 5);
+  const ell = Math.cbrt(f0 / density);
+  let cmax = 0;
+  for (let i = 0; i < k.length && k[i] <= kp / 5; i++) cmax = Math.max(cmax, Math.abs(C[i]) / Math.max(f[i], 1e-300));
+  const eps0 = cmax > 0 ? 1e-3 / cmax : 1e-6;
+  const est: number[] = [];
+  for (const kMax of [kp / 5, kp / 10]) {
+    const f0w = f0Fit(f, kMax);
+    for (const eps of [eps0, 2 * eps0]) {
+      for (let i = 0; i < f.length; i++) { fp[i] = f[i] + eps * C[i]; fm[i] = f[i] - eps * C[i]; }
+      const dlnf0 = (f0Fit(fp, kMax) - f0Fit(fm, kMax)) / (2 * eps * f0w);
+      est.push(((2 / 3) * dlnf0 / sc.t0_s / hbarOverM) * Math.cbrt(f0w / density) ** 2);
+    }
+  }
+  let err = 0;
+  for (const v of est) err = Math.max(err, Math.abs(v - est[0]));
+  return [ell, est[0], err];
+}
+
+const points = { t_s: [] as number[], X: [] as number[], rate: [] as number[], rateErr: [] as number[], poleWeight: [] as number[],
+  ell_um: [] as number[], ellRate: [] as number[], ellRateErr: [] as number[] };
 const X0 = kXi / kpSmooth(f0, 0.02);
 const snapTargets = Array.from({ length: nSnap }, (_, i) => X0 * (target / X0) ** (i / Math.max(1, nSnap - 1)));
 const snapshots = { t_s: [0] as number[], X: [X0] as number[], n_k: [Array.from(f0)] as number[][] };
@@ -150,7 +198,7 @@ const save = (status: Record<string, unknown>) => {
     schema: 'wke-analysis-run/1',
     meta: { ...meta, wall_s: (Date.now() - t0) / 1000 },
     settings: { state, stateName: preset.name, a_a0: a, model, modelLabel: MODEL_BY_ID[model].label, accuracy, target, pMin, pMax, nGrid,
-      density_um3: density, species: speciesKey, kernel: 'classical', wallCap_s: wallCap },
+      density_um3: density, species: speciesKey, kernel, wallCap_s: wallCap },
     scales: { kXi_um_inv: kXi, xi_um: sc.xi_um, t0_s: sc.t0_s, hbarOverM_um2_per_s: hbarOverM },
     initial: { kp0_um_inv: kp0, EN_nK },
     points, snapshots: { ...snapshots, k_um_inv: Array.from(k) },
@@ -175,6 +223,8 @@ const res = await runWKE({
     lastLogX = Math.log10(X);
     const [x, y, e, w] = rateAt(Float64Array.from(f));
     points.t_s.push(tau * sc.t0_s); points.X.push(x); points.rate.push(y); points.rateErr.push(e); points.poleWeight.push(w);
+    const [ell, ey, ee] = ellAt(f, kXi / x);
+    points.ell_um.push(ell); points.ellRate.push(ey); points.ellRateErr.push(ee);
     if (Date.now() - lastSave > 30000) { lastSave = Date.now(); save({ status: 'running' }); }
   },
 });

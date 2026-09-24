@@ -39,6 +39,12 @@ commit and whether solver files had uncommitted changes, timings, status of ever
 - **The rate** (m/ħ) d(1/k_p²)/dt is taken at each sample from the collision term itself: the
   smooth peak k_p is differentiated along df/dτ. No time window is used, so fast late
   evolution is resolved. The error bar is the spread over two peak-fit widths and two steps.
+- **The coherence length** is ℓ = (f(k→0)/n)^(1/3), f the occupation per mode and n the density,
+  so that ℓ³ = V in equilibrium. f₀ = f(k→0) is e^A from a least-squares fit ln f = A + B k² over
+  all grid points with k ≤ k_p/5 (the low-k plateau), and (m/ħ) dℓ²/dt is taken from the
+  collision term through the same fit at every rate sample. The error bar is the spread over the
+  fit windows k_p/5 and k_p/10 and two steps. Runs made before this was recorded fall back to finite differences
+  over the n_k snapshots, without error bars (`plots/ell.pdf`, which says so in its title).
 - **k_p** is the vertex of a parabola fitted to ln(k² n_k) against ln k with weights
   exp(−(L_max − L)/δ), δ = 0.02, so it has no steps when grid points enter or leave the fit.
 - **The grid** is extended down to `pMin` k_ξ (default 0.001) at the accuracy level's
@@ -47,3 +53,12 @@ commit and whether solver files had uncommitted changes, timings, status of ever
   ħ²⟨k²⟩/2m, which does not depend on a.
 - **Figure style:** marker = initial state, colour = a (ordered scale), points with error
   bars without caps, guides as thin grey labelled lines, legends outside the axes.
+
+## Known issues
+
+- **Kinetic energy drift** (found 2026-09-24 in `chain-standard-3states`, bubble chain, standard
+  accuracy, not investigated). From the n_k snapshots, ∫k⁴f dk rises by 4 to 11% while k_ξ/k_p goes
+  from its initial value to about 10, then drops by up to 14% over the last snapshots (for example
+  1.03 → 0.86 for Prepared state A at 30 a₀); particle number holds to within 3%. Not yet known
+  whether this is the solver or the snapshot quadrature. Figures that use E/N (such as the √(gn/(E/N))
+  axis of `rate_vs_a.pdf`) use the initial value.
