@@ -166,6 +166,12 @@ export interface LoopRhsOptions {
   sNodes: number;
   /** multiplies every loop; 1 is physical (tests only) */
   loopScale?: number;
+  /**
+   * Statistics of the collision factors (default classical). 'quantum' adds the Bose +1 terms,
+   * f₁f₂(1 + f + f₃) − f f₃(1 + f₁ + f₂); only the exchange-chain models accept it, because
+   * the +1 cancels from L₋ (its factor is f_{k+Q} − f_k), so their dressing is unchanged.
+   */
+  kernel?: KernelType;
 }
 
 /** Gauss-Legendre points on [0, 1] for the resummed channel averages. */
@@ -233,6 +239,10 @@ export function makeLoopPartial(o: LoopRhsOptions): PartialRhs {
   // Heuristic B puts both channels in one denominator: Z = Re L₊ + 4 L₋, M = ⟨1/|1 − Z|²⟩
   // averaged jointly over the s and t channels; heuristic A is the exchange chain alone.
   const sResum = model === 'heuristic';
+  if (o.kernel === 'quantum' && model !== 'chain' && model !== 'heuristic-a') {
+    throw new Error(`the Bose +1 kernel is only defined for the exchange-chain models, not ${model}`);
+  }
+  const bose = o.kernel === 'quantum' ? 1 : 0;
   let dMinShift = Infinity;
   /**
    * Uniform t-channel average of 1/[(U − r)² + V²] over [ea, eb] (cell units), for a
@@ -353,8 +363,8 @@ export function makeLoopPartial(o: LoopRhsOptions): PartialRhs {
           const f1 = (1 - u1) * f[j1] + u1 * f[j1 + 1];
           const f2 = (1 - u2) * f[j2] + u2 * f[j2 + 1];
           const f3 = (1 - u3) * f[j3] + u3 * f[j3 + 1];
-          const g = f1 * f2 * (fp + f3);
-          const l = fp * f3 * (f1 + f2);
+          const g = f1 * f2 * (bose + fp + f3);
+          const l = fp * f3 * (bose + f1 + f2);
 
           // uniform t-channel average of F over [ta, tb] (cells), from the pair table
           const ea = ta[e], eb = tb[e];

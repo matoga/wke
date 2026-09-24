@@ -52,7 +52,7 @@ export const MODELS: ModelInfo[] = [
     blurb: 'Large-N resummation of the exchange-bubble chain, on the one-component tree level.',
     solver: 'chain',
     hasPole: true,
-    allowsQuantum: false,
+    allowsQuantum: true,
   },
   {
     id: 'heuristic-a',
@@ -62,7 +62,7 @@ export const MODELS: ModelInfo[] = [
     blurb: 'Exchange chain with the one-component rung weight 4. Matches the one-loop exchange term only; omits L₊ and crossed diagrams.',
     solver: 'heuristic-a',
     hasPole: true,
-    allowsQuantum: false,
+    allowsQuantum: true,
   },
   {
     id: 'heuristic',

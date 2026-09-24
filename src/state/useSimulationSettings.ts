@@ -35,7 +35,7 @@ export function useSimulationSettings() {
   const [settings, setSettings] = useState<SimulationSettings>(() => ({ ...DEFAULT_SETTINGS, ...load('settings', DEFAULT_SETTINGS, isSettings) }));
   useEffect(() => { save('settings', settings); }, [settings]);
   const update = (patch: Partial<SimulationSettings>) => setSettings((prev) => ({ ...prev, ...patch }));
-  /** Bose +1 statistics only exist for the bare equation. */
+  /** Bose +1 statistics exist for the bare equation and the exchange-chain models. */
   const effectiveKernel: KernelType = MODEL_BY_ID[settings.model].allowsQuantum ? settings.kernel : 'classical';
   return { settings, update, effectiveKernel };
 }

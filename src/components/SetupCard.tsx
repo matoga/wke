@@ -4,7 +4,7 @@ import { Card, Field, NumberInput, Segmented } from '../ui/primitives';
 import { Tex } from '../ui/Tex';
 import { fmt, time } from '../ui/format';
 import { modelColor, modelDashed } from '../ui/runView';
-import { MODELS } from '../physics/models';
+import { MODELS, MODEL_BY_ID } from '../physics/models';
 import type { ModelId } from '../physics/models';
 import { ACCURACY_LEVELS, LEVEL_EVENTS, PRECISION } from '../physics/precision';
 import { INPUT_MODES } from '../physics/parameters';
@@ -32,6 +32,7 @@ export function SetupCard({
   lastRuns: Partial<Record<ModelId, RunRecord>>;
 }) {
   const bare = settings.model === 'bare';
+  const quantumOk = MODEL_BY_ID[settings.model].allowsQuantum;
   const stopInvalid = !(settings.stopKpFraction >= 0.01 && settings.stopKpFraction < 0.99);
   return (
     <Card label="Setup" ariaLabel="Model and parameters">
@@ -57,18 +58,18 @@ export function SetupCard({
       </div>
 
       <div className="toolbar">
-        {bare && (
+        {quantumOk && (
           <Segmented
             ariaLabel="Statistics"
             value={settings.kernel}
             onChange={(kernel) => onSettings({ kernel })}
             options={[
               { id: 'classical', label: 'Classical waves', title: 'Occupations much larger than one.' },
-              { id: 'quantum', label: 'Bose +1', title: 'Include spontaneous terms f → f + 1. Only for the bare equation.' },
+              { id: 'quantum', label: 'Bose +1', title: 'Include spontaneous terms f → f + 1. Bare equation and exchange-chain models.' },
             ]}
           />
         )}
-        {!bare && <span className="hint">Loop models use classical wave statistics.</span>}
+        {!quantumOk && <span className="hint">This model uses classical wave statistics.</span>}
       </div>
 
       <div className="field accuracy-field">

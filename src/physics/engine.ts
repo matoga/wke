@@ -92,6 +92,7 @@ export class SolverEngine {
         sign: spec.sign,
         sNodes: s.sNodes,
         loopScale: spec.loopScale,
+        kernel: spec.kernel,
       });
     }
     return {

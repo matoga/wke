@@ -236,6 +236,40 @@ section('Model identities');
   const dp = maxDiff(full, summed) / Math.max(...Array.from(full, Math.abs));
   check('partitioned loop right-hand sides add up to the full one', dp < 1e-12, `max rel = ${dp.toExponential(2)}`);
 
+  // Bose +1 statistics: exchange-chain models only, dressing unchanged.
+  {
+    const bareQ = new Float64Array(n);
+    makeBarePartial(geom, 'quantum', NCAL)(f, bareQ);
+    const bareQMax = Math.max(...Array.from(bareQ, Math.abs));
+    const runQ = (model: 'chain' | 'heuristic-a', loopScale = 1, ff = f) => {
+      const out = new Float64Array(n);
+      makeLoopPartial({ model, geom, channels: ch, loopOp: op, ncal: NCAL, sign: -1, sNodes: 4, loopScale, kernel: 'quantum' })(ff, out);
+      return out;
+    };
+    for (const model of ['chain', 'heuristic-a'] as const) {
+      const d = maxDiff(runQ(model, 0), bareQ) / bareQMax;
+      check(`${model}, Bose +1: switching the loops off gives the bare quantum equation`, d < 1e-13, `max rel = ${d.toExponential(2)}`);
+      const c = runQ(model);
+      for (const [power, what] of [[2, 'number'], [4, 'energy']] as const) {
+        const r = activity(c, power) / activity(bareQ, power);
+        check(`${model}, Bose +1: ${what} balance within 15% of bare quantum`, Math.abs(r - 1) < 0.15, `ratio ${r.toFixed(3)}`);
+      }
+    }
+    // Bose-Einstein is a fixed point: every event has g = l, whatever its dressing.
+    const be = Float64Array.from(grid, (p) => 1 / Math.expm1((p * p + 0.3) / 0.8));
+    const beBare = new Float64Array(n);
+    makeBarePartial(geom, 'quantum', NCAL)(be, beBare);
+    const beScale = Math.max(...Array.from(beBare, Math.abs));
+    const beChain = Math.max(...Array.from(runQ('chain', 1, be), Math.abs));
+    check('chain, Bose +1: Bose-Einstein residual stays at the bare discretisation level', beChain < 3 * beScale,
+      `${beChain.toExponential(2)} vs bare ${beScale.toExponential(2)}`);
+    for (const model of ['one-loop', 'heuristic'] as const) {
+      let threw = false;
+      try { makeLoopPartial({ model, geom, channels: ch, loopOp: op, ncal: NCAL, sign: -1, sNodes: 4, kernel: 'quantum' }); } catch { threw = true; }
+      check(`${model}: the Bose +1 kernel is refused`, threw, threw ? 'throws' : 'accepted');
+    }
+  }
+
   // Diagnostics and the pole alarm.
   const weak = makeLoopRhs({ model: 'heuristic', geom, channels: ch, loopOp: op, ncal: NCAL, sign: -1, sNodes: 4 });
   const dWeak = weak(f, new Float64Array(n)) as RhsDiagnostics;

@@ -104,8 +104,12 @@ export function MethodNotes() {
 
       <h3>Limits</h3>
       <p>
-        The loop models use classical wave statistics; only the bare equation offers the Bose <Tex math="f \to f + 1" />{' '}
-        terms. A one-loop run stops when its bracket <Tex math="M" /> turns negative on more than{' '}
+        The bare equation, the bubble chain and heuristic A offer the Bose <Tex math="f \to f + 1" /> terms: the
+        collision factors become <Tex math="f_1 f_2 (1 + f + f_3) - f f_3 (1 + f_1 + f_2)" />, while the dressing is
+        unchanged, because the +1 cancels from the exchange bubble, whose factor is{' '}
+        <Tex math="f_{\mathbf k + \mathbf Q} - f_{\mathbf k}" />. The one-loop model and heuristic B also contain the
+        pair bubble <Tex math="L_+" />, whose vacuum part is absorbed into <Tex math="a" />; they use classical wave
+        statistics. A one-loop run stops when its bracket <Tex math="M" /> turns negative on more than{' '}
         {NEGATIVE_WEIGHT_LIMIT * 100}% of the collision weight, and a resummed run stops when{' '}
         any of its weights <Tex math="1/|1 - cL|^2" /> reaches {POLE_WEIGHT_LIMIT}: past these points the models say nothing
         quantitative. The resummed vertices can approach their pole for repulsive gases too, because{' '}

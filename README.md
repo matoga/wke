@@ -49,7 +49,10 @@ momentum is uniformly distributed over an interval of length 2·min(p₁, p₂, 
 averaged there. Loops scale as (k_ξ/k_p)² with k_ξ = √(8πn|a|), so the classical dynamics depend on n and a only
 through na and the sign of a. Attractive gases (a < 0) are supported.
 
-The loop models use classical wave statistics; the bare equation can add the Bose f → f + 1 terms. A one-loop run
+The bare equation, the bubble chain and heuristic A can add the Bose f → f + 1 terms: the collision factors become
+f₁f₂(1 + f + f₃) − f f₃(1 + f₁ + f₂), and the dressing is unchanged because the +1 cancels from the exchange bubble
+(its factor is f_{k+Q} − f_k). The one-loop model and heuristic B, which also contain the pair bubble L₊, use
+classical wave statistics. A one-loop run
 stops when its bracket turns negative on more than 0.1% of the collision weight, and a resummed run stops when
 any of its weights 1/|1 − cL|² reaches 10.
 
