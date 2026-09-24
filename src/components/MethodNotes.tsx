@@ -12,6 +12,7 @@ const MODEL_NOTES: Record<string, string> = {
   'one-loop': 'Exact next order for a one-component gas. Odd in a: attraction speeds the cascade up, repulsion slows it down. Quantitative while the dressing |M − 1| stays small.',
   chain: 'All-order resummation of the exchange bubble chain, as in the large-N vector model, placed on the one-component tree level. Reduces to 1 + 2 Re L₋ at one loop.',
   'heuristic-a': 'Exchange chain with the one-component rung weight 4. It reproduces only the exchange part 8 Re L₋ of the one-loop term: it omits L₊ and all crossed diagrams, and the location of its pole, 4 Re L₋ = 1, is not derived.',
+  'heuristic-c': 'The bubble chain with its rung weight raised from 1 to 1.85. Deep in the coherent regime the loops are large and the rates fall as 1/c², so this rescales the late dynamics by 1/3.4: c is fitted so that the late growth of the coherence length, (m/ħ) dℓ²/dt, matches the measured value ≈ 3.4 in a box of ³⁹K, with the Bose +1 terms. Fitted, not derived.',
   heuristic: 'A minimal ansatz with one denominator for both channels, Z = Re L₊ + 4L₋ and weight 1/|1 − Z|², averaged jointly over the particle-particle and exchange channels. Its first order is exactly the one-loop bracket 1 + 2 Re L₊ + 8 Re L₋; its higher orders are heuristic, not derived, and it omits crossed diagrams.',
 };
 
@@ -104,7 +105,7 @@ export function MethodNotes() {
 
       <h3>Limits</h3>
       <p>
-        The bare equation, the bubble chain and heuristic A offer the Bose <Tex math="f \to f + 1" /> terms: the
+        The bare equation, the bubble chain and heuristics A and C offer the Bose <Tex math="f \to f + 1" /> terms: the
         collision factors become <Tex math="f_1 f_2 (1 + f + f_3) - f f_3 (1 + f_1 + f_2)" />, while the dressing is
         unchanged, because the +1 cancels from the exchange bubble, whose factor is{' '}
         <Tex math="f_{\mathbf k + \mathbf Q} - f_{\mathbf k}" />. The one-loop model and heuristic B also contain the

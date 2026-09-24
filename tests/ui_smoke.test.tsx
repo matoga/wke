@@ -126,7 +126,7 @@ for (const banned of ['Calibrat', 'κ', 'Δt₁ᐟ₂', 'calibration']) {
 }
 
 const modelButtons = Array.from(container.querySelectorAll('.models .model')) as HTMLButtonElement[];
-check('five kinetic models offered', modelButtons.length === 5, `${modelButtons.length}`);
+check('six kinetic models offered', modelButtons.length === 6, `${modelButtons.length}`);
 check('exactly one model selected', modelButtons.filter((b) => b.getAttribute('aria-pressed') === 'true').length === 1);
 const accuracy = container.querySelector('[aria-label="Accuracy"]');
 check('accuracy is a four-level segmented control', accuracy?.querySelectorAll('button').length === 4);
@@ -157,7 +157,7 @@ check('loop verdict badge shown', text().includes('perturbative') || text().incl
 await click(byText('Run all models'), 'run all');
 for (let i = 0; i < 10; i++) await settle();
 const rows = Array.from(container.querySelectorAll('section[aria-label="Peak momentum against time"] tbody tr'));
-check('all five models appear in the comparison table', rows.length === 5, `${rows.length}`);
+check('all six models appear in the comparison table', rows.length === 6, `${rows.length}`);
 check('comparison reports ratios to bare', text().includes('1.1900'));
 
 // Heuristic model with attraction runs into the pole.

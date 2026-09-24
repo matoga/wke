@@ -155,7 +155,7 @@ export function makeBareRhs(geom: CollisionGeometry, kernel: KernelType, ncal: n
 }
 
 export interface LoopRhsOptions {
-  model: 'one-loop' | 'chain' | 'heuristic-a' | 'heuristic';
+  model: 'one-loop' | 'chain' | 'heuristic-a' | 'heuristic-c' | 'heuristic';
   geom: CollisionGeometry;
   channels: ChannelGeometry;
   loopOp: LoopOperator;
@@ -211,7 +211,15 @@ function resummedCellIntegral(
 const C23 = 2 / 3;
 const C43 = 4 / 3;
 
+/**
+ * Rung weight of heuristic C: the bubble chain with 1/|1 − c L₋|². Deep in the coherent regime
+ * |L₋| ≫ 1, so the late rates scale as 1/c²; c² ≈ 3.4 brings the bubble chain's late
+ * (m/ħ) dℓ²/dt ≈ 11.5 (Bose +1) down to the measured ≈ 3.4.
+ */
+export const RUNG_C = 1.85;
+
 export function loopRung(model: string): number {
+  if (model === 'heuristic-c') return RUNG_C;
   return model === 'heuristic' || model === 'heuristic-a' ? 4 : 1;
 }
 
@@ -237,9 +245,9 @@ export function makeLoopPartial(o: LoopRhsOptions): PartialRhs {
   const c = loopRung(model);
   const oneLoop = model === 'one-loop';
   // Heuristic B puts both channels in one denominator: Z = Re L₊ + 4 L₋, M = ⟨1/|1 − Z|²⟩
-  // averaged jointly over the s and t channels; heuristic A is the exchange chain alone.
+  // averaged jointly over the s and t channels; heuristics A and C are the exchange chain alone.
   const sResum = model === 'heuristic';
-  if (o.kernel === 'quantum' && model !== 'chain' && model !== 'heuristic-a') {
+  if (o.kernel === 'quantum' && model !== 'chain' && model !== 'heuristic-a' && model !== 'heuristic-c') {
     throw new Error(`the Bose +1 kernel is only defined for the exchange-chain models, not ${model}`);
   }
   const bose = o.kernel === 'quantum' ? 1 : 0;

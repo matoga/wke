@@ -3,10 +3,10 @@
  * tree-level rate; they differ in how each collision is dressed by loops.
  */
 
-export type ModelId = 'bare' | 'one-loop' | 'chain' | 'heuristic-a' | 'heuristic';
+export type ModelId = 'bare' | 'one-loop' | 'chain' | 'heuristic-a' | 'heuristic-c' | 'heuristic';
 
 /** Right-hand side integrated for each model. */
-export type SolverModel = 'bare' | 'one-loop' | 'chain' | 'heuristic-a' | 'heuristic';
+export type SolverModel = 'bare' | 'one-loop' | 'chain' | 'heuristic-a' | 'heuristic-c' | 'heuristic';
 
 export interface ModelInfo {
   id: ModelId;
@@ -61,6 +61,16 @@ export const MODELS: ModelInfo[] = [
     bracket: 'M = \\left\\langle \\dfrac{1}{|1 - 4L_-|^2} \\right\\rangle_t',
     blurb: 'Exchange chain with the one-component rung weight 4. Matches the one-loop exchange term only; omits L₊ and crossed diagrams.',
     solver: 'heuristic-a',
+    hasPole: true,
+    allowsQuantum: true,
+  },
+  {
+    id: 'heuristic-c',
+    label: 'Heuristic C, fitted',
+    short: 'Heuristic C',
+    bracket: 'M = \\left\\langle \\dfrac{1}{|1 - 1.85\\,L_-|^2} \\right\\rangle_t',
+    blurb: 'Bubble chain with the rung weight 1.85, fitted so that the late coherence spreading matches the measured speed dℓ²/dt ≈ 3.4 ħ/m.',
+    solver: 'heuristic-c',
     hasPole: true,
     allowsQuantum: true,
   },

@@ -14,7 +14,7 @@ import { buildChannelGeometry } from '../src/physics/channels';
 import {
   buildLoopOperator, chi0, createLoopState, evalH, imLminus, imLplus, makeLoopEvaluators, reLminus, reLplus, updateLoopState,
 } from '../src/physics/loops';
-import { makeBarePartial, makeLoopPartial, makeLoopRhs } from '../src/physics/rhs';
+import { makeBarePartial, makeLoopPartial, makeLoopRhs, RUNG_C } from '../src/physics/rhs';
 import type { RhsDiagnostics } from '../src/physics/rhs';
 import { runWKE } from '../src/physics/integrator';
 import { INPUT_GRID } from '../src/physics/descriptors';
@@ -241,12 +241,15 @@ section('Model identities');
     const bareQ = new Float64Array(n);
     makeBarePartial(geom, 'quantum', NCAL)(f, bareQ);
     const bareQMax = Math.max(...Array.from(bareQ, Math.abs));
-    const runQ = (model: 'chain' | 'heuristic-a', loopScale = 1, ff = f) => {
+    const runQ = (model: 'chain' | 'heuristic-a' | 'heuristic-c', loopScale = 1, ff = f) => {
       const out = new Float64Array(n);
       makeLoopPartial({ model, geom, channels: ch, loopOp: op, ncal: NCAL, sign: -1, sNodes: 4, loopScale, kernel: 'quantum' })(ff, out);
       return out;
     };
-    for (const model of ['chain', 'heuristic-a'] as const) {
+    // heuristic C is the chain with its rung weight RUNG_C
+    const dC = maxDiff(runQ('heuristic-c'), runQ('chain', RUNG_C)) / Math.max(...Array.from(runQ('chain', RUNG_C), Math.abs));
+    check('heuristic C = chain with loops scaled by its rung weight', dC < 1e-12, `max rel = ${dC.toExponential(2)}`);
+    for (const model of ['chain', 'heuristic-a', 'heuristic-c'] as const) {
       const d = maxDiff(runQ(model, 0), bareQ) / bareQMax;
       check(`${model}, Bose +1: switching the loops off gives the bare quantum equation`, d < 1e-13, `max rel = ${d.toExponential(2)}`);
       const c = runQ(model);

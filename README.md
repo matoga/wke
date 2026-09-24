@@ -42,6 +42,7 @@ gives both in full.
 | One loop, N = 1 | 1 + 2⟨Re L₊⟩ + 8⟨Re L₋⟩ | Exact next order for a one-component gas. Odd in a. |
 | Bubble chain, N → ∞ | ⟨\|1 − L₋\|⁻²⟩ | Large-N exchange chain on the one-component tree level. |
 | Heuristic A, N = 1 | ⟨\|1 − 4L₋\|⁻²⟩ₜ | Exchange chain with the one-component rung weight. Omits L₊ and crossed diagrams; its pole location is not derived. |
+| Heuristic C, fitted | ⟨\|1 − 1.85 L₋\|⁻²⟩ₜ | Bubble chain with the rung weight fitted so the late (m/ħ) dℓ²/dt matches the measured ≈ 3.4 (Bose +1). Fitted, not derived. |
 | Heuristic B, N = 1 | ⟨\|1 − Re L₊ − 4L₋\|⁻²⟩ₛ,ₜ | One denominator for both channels; first order is exactly the one-loop bracket, higher orders are heuristic. Omits crossed diagrams. |
 
 ⟨·⟩ is the average over the angular configurations of each collision: for fixed magnitudes the transferred
@@ -49,7 +50,7 @@ momentum is uniformly distributed over an interval of length 2·min(p₁, p₂, 
 averaged there. Loops scale as (k_ξ/k_p)² with k_ξ = √(8πn|a|), so the classical dynamics depend on n and a only
 through na and the sign of a. Attractive gases (a < 0) are supported.
 
-The bare equation, the bubble chain and heuristic A can add the Bose f → f + 1 terms: the collision factors become
+The bare equation, the bubble chain and heuristics A and C can add the Bose f → f + 1 terms: the collision factors become
 f₁f₂(1 + f + f₃) − f f₃(1 + f₁ + f₂), and the dressing is unchanged because the +1 cancels from the exchange bubble
 (its factor is f_{k+Q} − f_k). The one-loop model and heuristic B, which also contain the pair bubble L₊, use
 classical wave statistics. A one-loop run
