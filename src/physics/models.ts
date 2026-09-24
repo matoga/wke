@@ -3,10 +3,10 @@
  * tree-level rate; they differ in how each collision is dressed by loops.
  */
 
-export type ModelId = 'bare' | 'one-loop' | 'chain' | 'heuristic';
+export type ModelId = 'bare' | 'one-loop' | 'chain' | 'heuristic-a' | 'heuristic';
 
 /** Right-hand side integrated for each model. */
-export type SolverModel = 'bare' | 'one-loop' | 'chain' | 'heuristic';
+export type SolverModel = 'bare' | 'one-loop' | 'chain' | 'heuristic-a' | 'heuristic';
 
 export interface ModelInfo {
   id: ModelId;
@@ -55,11 +55,21 @@ export const MODELS: ModelInfo[] = [
     allowsQuantum: false,
   },
   {
+    id: 'heuristic-a',
+    label: 'Heuristic A, N = 1',
+    short: 'Heuristic A',
+    bracket: 'M = \\left\\langle \\dfrac{1}{|1 - 4L_-|^2} \\right\\rangle_t',
+    blurb: 'Exchange chain with the one-component rung weight 4. Matches the one-loop exchange term only; omits L₊ and crossed diagrams.',
+    solver: 'heuristic-a',
+    hasPole: true,
+    allowsQuantum: false,
+  },
+  {
     id: 'heuristic',
-    label: 'Heuristic resummation, N = 1',
-    short: 'Heuristic',
-    bracket: 'M = \\left\\langle \\dfrac{1}{|1 - L_+|^2} \\right\\rangle_s \\left\\langle \\dfrac{1}{|1 - 4L_-|^2} \\right\\rangle_t',
-    blurb: 'Particle-particle and exchange chains with the one-component rung weights. Matches the full one-loop term; omits crossed diagrams.',
+    label: 'Heuristic B, N = 1',
+    short: 'Heuristic B',
+    bracket: 'M = \\left\\langle \\dfrac{1}{|1 - \\mathrm{Re}\\,L_+ - 4L_-|^2} \\right\\rangle_{s,t}',
+    blurb: 'One denominator for both channels, Z = Re L₊ + 4L₋. Matches the full one-loop term at first order; higher orders are a guess.',
     solver: 'heuristic',
     hasPole: true,
     allowsQuantum: false,

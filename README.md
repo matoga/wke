@@ -41,7 +41,8 @@ gives both in full.
 | Bare | 1 | Leading order. Even in a. |
 | One loop, N = 1 | 1 + 2⟨Re L₊⟩ + 8⟨Re L₋⟩ | Exact next order for a one-component gas. Odd in a. |
 | Bubble chain, N → ∞ | ⟨\|1 − L₋\|⁻²⟩ | Large-N exchange chain on the one-component tree level. |
-| Heuristic, N = 1 | ⟨\|1 − L₊\|⁻²⟩ₛ ⟨\|1 − 4L₋\|⁻²⟩ₜ | Particle-particle and exchange chains whose first order is the full one-loop bracket. Omits crossed diagrams and channel mixing; its pole location is not derived. |
+| Heuristic A, N = 1 | ⟨\|1 − 4L₋\|⁻²⟩ₜ | Exchange chain with the one-component rung weight. Omits L₊ and crossed diagrams; its pole location is not derived. |
+| Heuristic B, N = 1 | ⟨\|1 − Re L₊ − 4L₋\|⁻²⟩ₛ,ₜ | One denominator for both channels; first order is exactly the one-loop bracket, higher orders are heuristic. Omits crossed diagrams. |
 
 ⟨·⟩ is the average over the angular configurations of each collision: for fixed magnitudes the transferred
 momentum is uniformly distributed over an interval of length 2·min(p₁, p₂, p₃, p₄), and the whole dressing is

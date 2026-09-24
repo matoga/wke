@@ -120,9 +120,9 @@ const REF: Record<string, number[][]> = {
   '-1': [[1.18034, 1.03457, 1.14983], [1.09802, 1.03749, 1.16201], [1.16353, 1.03568, 1.15477], [1.19999, 1.03587, 1.15714], [1.15250, 1.03601, 1.15570]],
 };
 const IDX = [375, 393, 407, 419, 428];
-const MODELS = ['one-loop', 'chain', 'heuristic'] as const;
+const MODELS = ['one-loop', 'chain', 'heuristic-a', 'heuristic'] as const;
 /** models with independent reference ratios in REF (columns in MODELS order) */
-const REF_MODELS = 2;
+const REF_MODELS = 3;
 
 for (const [label, quad, tol] of [
   ['parity quadrature', { nqLow: 16, nqHigh: 16, panels: 1 }, 5e-3],
@@ -139,7 +139,7 @@ for (const [label, quad, tol] of [
       makeLoopPartial({ model: MODELS[m], geom, channels: ch, loopOp: op, ncal: NCAL, sign, sNodes: 4 })(f, out);
       IDX.forEach((i, r) => { worst = Math.max(worst, Math.abs(out[i] / bare[i] - REF[String(sign)][r][m])); });
     }
-    check(`${label}, a ${sign > 0 ? '> 0' : '< 0'}: one loop, chain`, worst <= tol, `max |Δ| = ${worst.toExponential(2)} (tol ${tol})`);
+    check(`${label}, a ${sign > 0 ? '> 0' : '< 0'}: one loop, chain, heuristic A`, worst <= tol, `max |Δ| = ${worst.toExponential(2)} (tol ${tol})`);
   }
 }
 
@@ -172,9 +172,14 @@ section('Model identities');
   const parity = maxDiff(avg, bare) / bareMax;
   check('one loop is odd in a: C(+a) + C(−a) = 2 C_bare', parity < 1e-12, `max rel = ${parity.toExponential(2)}`);
 
-  // First order: chain → 1 + 2 Re L₋, heuristic → 1 + 2 Re L₊ + 8 Re L₋ (the one-loop bracket).
+  // First order: chain → 1 + 2 Re L₋, heuristic A → 1 + 8 Re L₋,
+  // heuristic B → 1 + 2 Re L₊ + 8 Re L₋ (the one-loop bracket).
   const eps = 1e-3;
   const dc = run('chain', 1, eps).out, dh = run('heuristic', 1, eps).out, dl = run('one-loop', 1, eps).out;
+  const da = run('heuristic-a', 1, eps).out;
+  let na = 0, nc = 0;
+  for (let i = 0; i < n; i++) { na += Math.abs(da[i] - bare[i]); nc += Math.abs(dc[i] - bare[i]); }
+  relClose('weak coupling: (heuristic A − bare) = 4 (chain − bare)', na / nc, 4, 1e-2);
   let num = 0, den = 0, dev = 0, act = 0;
   for (let i = 0; i < n; i++) {
     num += Math.abs(dh[i] - bare[i]);
@@ -182,8 +187,8 @@ section('Model identities');
     dev = Math.max(dev, Math.abs(dh[i] - dl[i]));
     act = Math.max(act, Math.abs(dl[i] - bare[i]));
   }
-  check('weak coupling: heuristic = one loop at first order', dev / act < 1e-2, `max |heuristic − one loop| / max |one loop − bare| = ${(dev / act).toExponential(2)}`);
-  check('weak coupling: the particle-particle chain matters (heuristic ≠ 4 × chain)', Math.abs(num / den - 4) > 0.05, `ratio ${(num / den).toFixed(3)}`);
+  check('weak coupling: heuristic B = one loop at first order', dev / act < 1e-2, `max |heuristic − one loop| / max |one loop − bare| = ${(dev / act).toExponential(2)}`);
+  check('weak coupling: the particle-particle chain matters (heuristic B ≠ 4 × chain)', Math.abs(num / den - 4) > 0.05, `ratio ${(num / den).toFixed(3)}`);
 
   // Conservation quality: the loops must not degrade the discrete scheme's
   // number and energy balance appreciably.
@@ -273,7 +278,8 @@ section('Models end to end (Draft, one-component gas)');
   const oneStrong = await t('one-loop', 50);
   const bare = await t('bare', 50);
   const chain = await t('chain', -50);
-  const heur = await t('heuristic', -50);
+  const heur = await t('heuristic-a', -50);
+  const heurB = await t('heuristic', -50);
   check('one loop at 50 a₀ stops cleanly when the bracket turns negative', oneStrong.termination === 'pole',
     `${oneStrong.termination} at k_p/k_p,0 = ${(oneStrong.kpTrack.kp.at(-1)! / oneStrong.kp0_um_inv).toFixed(3)}`);
   for (const r of [bare25, oneRep, oneAtt, bare, chain, heur]) {
@@ -283,7 +289,8 @@ section('Models end to end (Draft, one-component gas)');
     `${(oneRep.dtTarget_s! / bare25.dtTarget_s!).toFixed(4)} × bare`);
   check('attraction speeds up the one-loop relaxation', oneAtt.dtTarget_s! < bare25.dtTarget_s!,
     `${(oneAtt.dtTarget_s! / bare25.dtTarget_s!).toFixed(4)} × bare`);
-  check('attraction speeds up the heuristic resummation', heur.dtTarget_s! < bare.dtTarget_s!,
+  check('heuristic B at −50 a₀ runs into its pole and stops cleanly', heurB.termination === 'pole', `${heurB.termination}`);
+  check('attraction speeds up heuristic A', heur.dtTarget_s! < bare.dtTarget_s!,
     `${(heur.dtTarget_s! / bare.dtTarget_s!).toFixed(4)} × bare`);
   note(`  t/t_bare: one loop at ±25 a₀ ${(oneRep.dtTarget_s! / bare25.dtTarget_s!).toFixed(4)} / ${(oneAtt.dtTarget_s! / bare25.dtTarget_s!).toFixed(4)}; at −50 a₀ chain −a ${(chain.dtTarget_s! / bare.dtTarget_s!).toFixed(4)}; heuristic −a ${(heur.dtTarget_s! / bare.dtTarget_s!).toFixed(4)}`);
 }

@@ -11,7 +11,8 @@ const MODEL_NOTES: Record<string, string> = {
   bare: 'Leading order in the coupling. Even in a, so attraction and repulsion relax identically.',
   'one-loop': 'Exact next order for a one-component gas. Odd in a: attraction speeds the cascade up, repulsion slows it down. Quantitative while the dressing |M − 1| stays small.',
   chain: 'All-order resummation of the exchange bubble chain, as in the large-N vector model, placed on the one-component tree level. Reduces to 1 + 2 Re L₋ at one loop.',
-  heuristic: 'Separate geometric chains in the particle-particle and exchange channels, with the rung weights 1 and 4 that reproduce the full one-loop bracket 1 + 2 Re L₊ + 8 Re L₋ at first order. Beyond that it is a guess: it omits crossed diagrams and the mixing of the two channels, and the location of its exchange pole, 4 Re L₋ = 1, is not derived. A mean-field linear-response argument would place it at 2 Re L₋ = 1 instead.',
+  'heuristic-a': 'Exchange chain with the one-component rung weight 4. It reproduces only the exchange part 8 Re L₋ of the one-loop term: it omits L₊ and all crossed diagrams, and the location of its pole, 4 Re L₋ = 1, is not derived.',
+  heuristic: 'A minimal ansatz with one denominator for both channels, Z = Re L₊ + 4L₋ and weight 1/|1 − Z|², averaged jointly over the particle-particle and exchange channels. Its first order is exactly the one-loop bracket 1 + 2 Re L₊ + 8 Re L₋; its higher orders are heuristic, not derived, and it omits crossed diagrams.',
 };
 
 export function MethodNotes() {

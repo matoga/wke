@@ -8,11 +8,15 @@
  * its events is read off one cumulative table Φ(Q) = ∫ F dQ over
  * [|p − p1|, p + p1]; an event's channel average is a difference of Φ.
  *
- * Within a table cell F is the quadratic through its two ends and midpoint, so
- * Φ is exact Simpson at the nodes and cubic inside a cell.
+ * For the one-loop model F is linear in the loop and is taken as the quadratic
+ * through each cell's ends and midpoint. The resummed models interpolate the
+ * loops instead and integrate 1/|1 − L|² by Gauss-Legendre (see rhs.ts).
  */
 
 import type { CollisionGeometry } from './collision';
+
+/** Fewest table cells per (p, p1) pair, whatever its interval length. */
+export const MIN_CELLS = 16;
 
 export interface ChannelGeometry {
   pairQlo: Float64Array;
@@ -54,7 +58,8 @@ export function buildChannelGeometry(
     const p1 = pairP1[k];
     const qlo = Math.abs(p - p1);
     const qhi = p + p1;
-    const cells = Math.min(maxCells, Math.max(2, Math.ceil((qhi - qlo) / cellWidth)));
+    // At least MIN_CELLS per pair: short intervals (small p, p1) carry the sharpest loop structure.
+    const cells = Math.min(maxCells, Math.max(MIN_CELLS, Math.ceil((qhi - qlo) / cellWidth)));
     const h = (qhi - qlo) / cells;
     pairQlo[k] = qlo;
     pairH[k] = h;

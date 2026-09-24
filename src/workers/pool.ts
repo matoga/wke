@@ -5,7 +5,7 @@
 
 import type { EngineSpec } from '../physics/engine';
 import { rhsKind } from '../physics/engine';
-import { combinePartials, emptyPartial, finalizeDiagnostics } from '../physics/rhs';
+import { combinePartials, emptyPartial, finalizeDiagnostics, loopRung } from '../physics/rhs';
 import type { RhsDiagnostics, RhsPartial } from '../physics/rhs';
 
 export type ComputeRequest =
@@ -75,7 +75,7 @@ export class ComputePool {
       type: 'setup', id: this.nextId++, spec: { ...spec, partition: { stride: K, offset: i } },
     })));
     this.kind = rhsKind(spec.model);
-    this.rung = spec.model === 'heuristic' ? 4 : 1;
+    this.rung = loopRung(spec.model);
     let nEvents = 0, setup = 0;
     for (const r of replies) {
       if (r.type === 'ready') { nEvents += r.nEvents; setup = Math.max(setup, r.setup_ms); }

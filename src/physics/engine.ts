@@ -12,7 +12,7 @@ import { buildChannelGeometry } from './channels';
 import type { ChannelGeometry } from './channels';
 import { buildLoopOperator } from './loops';
 import type { LoopOperator } from './loops';
-import { makeBarePartial, makeLoopPartial } from './rhs';
+import { loopRung, makeBarePartial, makeLoopPartial } from './rhs';
 import type { PartialRhs, RhsKind } from './rhs';
 import { P_MIN } from './constants';
 import { PRECISION } from './precision';
@@ -28,6 +28,10 @@ export interface EngineSpec {
   ncal: number;
   sign: number;
   loopScale?: number;
+  /** lower end of the solver grid (default P_MIN); analysis scripts lower it to follow k_p far below k_ξ */
+  pMin?: number;
+  /** grid points (default: the accuracy level's) */
+  nGrid?: number;
 }
 
 export interface PreparedModel {
@@ -54,9 +58,11 @@ export class SolverEngine {
   prepare(spec: EngineSpec): PreparedModel {
     const t0 = performance.now();
     const s = PRECISION[spec.level];
-    const gKey = `${spec.level}|${spec.pMax}|${spec.partition.stride}|${spec.partition.offset}`;
+    const pMin = spec.pMin ?? P_MIN;
+    const nGrid = spec.nGrid ?? s.nGrid;
+    const gKey = `${spec.level}|${pMin}|${nGrid}|${spec.pMax}|${spec.partition.stride}|${spec.partition.offset}`;
     if (gKey !== this.geomKey || !this.geom) {
-      const grid = logarithmicGrid(P_MIN, spec.pMax, s.nGrid);
+      const grid = logarithmicGrid(pMin, spec.pMax, nGrid);
       this.geom = null;
       this.channels = null;
       this.geom = buildGeometry(grid, spec.pMax / Math.SQRT2, {
@@ -71,7 +77,7 @@ export class SolverEngine {
       partial = makeBarePartial(geom, spec.kernel, spec.ncal);
     } else {
       if (!this.channels) this.channels = buildChannelGeometry(geom, s.channelCell, s.channelCellsMax);
-      const oKey = `${spec.level}|${spec.pMax}`;
+      const oKey = `${spec.level}|${pMin}|${nGrid}|${spec.pMax}`;
       if (oKey !== this.opKey || !this.op) {
         this.op = null;
         this.op = buildLoopOperator(geom.grid, s.loopTable);
@@ -91,7 +97,7 @@ export class SolverEngine {
     return {
       partial,
       kind: rhsKind(spec.model),
-      rung: spec.model === 'heuristic' ? 4 : 1,
+      rung: loopRung(spec.model),
       grid: geom.grid,
       gridWeights: geom.weights,
       nEvents: geom.nEvents,

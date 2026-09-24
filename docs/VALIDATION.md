@@ -40,10 +40,10 @@ quadrature, cross-checked by Monte Carlo over the resonant manifold), for a Gaus
 | Re L₋ and Im L₋ at six (Q, ω), Re L₊ at four (P, ω₊) | within 10⁻³ |
 | Static limit χ₀ = −(1/N_cal)∫f dp | within 10⁻⁴ |
 | Power-law spectrum f ∝ s^(−7/3) | within 2 × 10⁻⁵ |
-| C_model/C_bare at five grid momenta, one loop, chain, heuristic, both signs of a | within 4.5 × 10⁻³ (parity), 4 × 10⁻³ (Standard), 4 × 10⁻⁴ (High quadrature) |
+| C_model/C_bare at five grid momenta, one loop, chain, heuristic A, both signs of a | within 4.5 × 10⁻³ (parity), 4 × 10⁻³ (Standard), 4 × 10⁻⁴ (High quadrature) |
 | Loops switched off | every model equals the bare equation to 10⁻¹³ |
 | One loop is odd in a | C(+a) + C(−a) = 2 C_bare to 10⁻¹⁴ |
-| First order | (heuristic − bare) = 4 (chain − bare) to 10⁻⁴ |
+| First order | (heuristic A − bare) = 4 (chain − bare) to 10⁻⁴; heuristic B = one loop to 1.3 × 10⁻⁴ |
 | Number and energy balance | within 15% of the bare scheme's for every model and sign |
 | Rayleigh-Jeans state | stays a fixed point at the bare discretisation level |
 | Pole and negative-bracket stops | trip at strong coupling and end the run cleanly |
