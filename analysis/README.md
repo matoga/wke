@@ -75,6 +75,20 @@ k_p = π/V^(1/3), twice past the box scale 2π/V^(1/3). `plots/experiment.py` th
 - `experiment_collapse`: ℓ² against t − t* and (ℓ/ξ)² against (t − t*)/t_ξ;
 - `experiment_kappa`: the IR exponent κ of n_k ∝ 1/(1 + (k/k₀)^κ) for the WKE and the measured spectra,
   and one n_k comparison at k_p ≪ k_ξ matched in ℓ.
+- `fig4c` (`plots/fig4c.py`): the Fig 4c analogue in the paper's style. Each series' WKE rate and (ℓ/ξ)² are
+  sampled at that series' measured times, pooled, and binned with edges halfway between the published
+  (ℓ/ξ)² values; error bars are standard errors. Left: WKE only; right: with the published points and the
+  per-series WKE curves. Guides: (ℓ/ξ)²/56 (ℓ² ∝ exp(t/τ), τ = 56 t_ξ) and D = 3.4. Series 8 and 10 (low N)
+  are left out; variants:
+  - `fig4c_all_sets`: fig4c with every series;
+  - `fig4c_resc`: fig4c with the WKE rates divided by 3.3;
+  - `fig4c_mod2`: η_eq recomputed at every sample from the drifting particle number and energy;
+  - `fig4c_mod3`: η(t) from a μ = 0 Bose-Einstein fit of the thermal tail (check figure `fig4c_mod3_eta`);
+  - `fig4c_kp`: the same with 1/k_p in place of ℓ, the published points and D rescaled by 1/c²;
+  - `fig4_mod`: the ℓ figure with the WKE taken through k_p, ℓ = c/k_p.
+  c = k_p ℓ is fitted on the WKE alone. These use the wide peak k_p of N_k ∝ k² n_k (`run.ts` fields `kpw_um_inv`,
+  `kpwRate`: a parabola of ln N_k over the top ≳ max/2), which does not hop between the bumps of a broad top.
+  `plots/kp_extraction.py` shows the extraction on the spectra.
 
 The published ℓ uses the same normalisation as ℓ here at early times but carries a deconvolution
 that is not undone; the published n_k is per volume, n_k = V f/(2π)³; the published spectra of

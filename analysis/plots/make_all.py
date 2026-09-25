@@ -20,6 +20,7 @@ import ell
 import rate_vs_a
 import nk_fixed
 import experiment
+import fig4c
 import bidirectional
 
 study_dir = sys.argv[1].rstrip('/')
@@ -31,6 +32,7 @@ if study.get('experiment'):
     data = sys.argv[sys.argv.index('--experiment') + 1] if '--experiment' in sys.argv else os.environ.get('WKE_EXPERIMENT_DATA')
     if data:
         experiment.make(study_dir, study, runs, data)
+        fig4c.make(study_dir, study, runs, data)
     else:
         print('  experiment: no data folder (pass --experiment <dir> or set WKE_EXPERIMENT_DATA); comparison figures skipped')
 if study.get('bidirectional'):

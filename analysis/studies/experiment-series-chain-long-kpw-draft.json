@@ -1,0 +1,131 @@
+{
+  "name": "experiment-series-chain-long-kpw-draft",
+  "question": "All 13 published series (protocol, a, N, V) with the bubble chain (N → ∞) and the Bose +1 terms, draft accuracy, run longer for the Fig 4c analogue, with the wide peak k_p of N_k (window N_k ≥ max/2) and its rate recorded: each run stops at k_ξ/k_p set to reach (ℓ/ξ)² ≈ 2000 (5% margin), past the box ceiling ℓ = V^(1/3) for the low-na series.",
+  "experiment": "Published measurements of coherence spreading in a box of ³⁹K: 13 series (protocol, a, N, V), run labels sNN = series number. Data folder outside the repository; see analysis/plots/experiment.py.",
+  "model": "chain",
+  "kernel": "quantum",
+  "accuracy": "draft",
+  "target": 10,
+  "pMin": 0.001,
+  "wallCap_s": 600,
+  "snapshots": 40,
+  "runs": [
+    {
+      "label": "s01",
+      "state": "measured_c1",
+      "a": [
+        100
+      ],
+      "density": 5.5054,
+      "target": 14.9
+    },
+    {
+      "label": "s02",
+      "state": "measured_c2",
+      "a": [
+        100
+      ],
+      "density": 5.5054,
+      "target": 14.7
+    },
+    {
+      "label": "s03",
+      "state": "measured_c3",
+      "a": [
+        100
+      ],
+      "density": 5.5054,
+      "target": 15.2
+    },
+    {
+      "label": "s04",
+      "state": "measured_c2",
+      "a": [
+        400
+      ],
+      "density": 5.5054,
+      "target": 15.0
+    },
+    {
+      "label": "s05",
+      "state": "measured_c1",
+      "a": [
+        400
+      ],
+      "density": 5.5054,
+      "target": 19.7
+    },
+    {
+      "label": "s06",
+      "state": "measured_c1",
+      "a": [
+        200
+      ],
+      "density": 5.5054,
+      "target": 13.8
+    },
+    {
+      "label": "s07",
+      "state": "measured_c3",
+      "a": [
+        200
+      ],
+      "density": 5.5054,
+      "target": 14.7
+    },
+    {
+      "label": "s08",
+      "state": "measured_c1",
+      "a": [
+        400
+      ],
+      "density": 1.2635,
+      "target": 14.1
+    },
+    {
+      "label": "s09",
+      "state": "measured_c1",
+      "a": [
+        70
+      ],
+      "density": 5.4152,
+      "target": 14.8
+    },
+    {
+      "label": "s10",
+      "state": "measured_c1",
+      "a": [
+        400
+      ],
+      "density": 5.3459,
+      "target": 12.8
+    },
+    {
+      "label": "s11",
+      "state": "measured_c1",
+      "a": [
+        140
+      ],
+      "density": 5.4152,
+      "target": 14.4
+    },
+    {
+      "label": "s12",
+      "state": "measured_c1",
+      "a": [
+        280
+      ],
+      "density": 5.2347,
+      "target": 23.0
+    },
+    {
+      "label": "s13",
+      "state": "measured_c3",
+      "a": [
+        50
+      ],
+      "density": 5.4152,
+      "target": 15.5
+    }
+  ]
+}

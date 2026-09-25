@@ -14,7 +14,7 @@
  * the particle number ∫k²f dk or the kinetic energy ∫k⁴f dk leaves 1 ± d of its initial value; both are
  * recorded at every rate sample and snapshot (fields N_rel, E_rel).
  *
- * Records, at samples spaced by 0.02 decades in k_ξ/k_p:
+ * Records, at samples spaced by 0.02 decades in k_ξ/k_p of the wide peak (below):
  *   - the smooth peak k_p (weighted parabola fit of ln(k² n_k) against ln k),
  *   - the instantaneous rate (m/ħ) d(1/k_p²)/dt, taken from the collision term itself:
  *       dk_p/dτ = [k_p(f + εC) − k_p(f − εC)] / 2ε,  C = ∂τ f,  d(1/k_p²)/dt = −2 k_p⁻³ dk_p/dτ / t₀,
@@ -23,6 +23,10 @@
  *   - the length ℓ̄ = (f(k→0)/n)^(1/3) (fields ell_um, ellRate, ellRateErr), f(k→0) from a fit
  *     ln f = A + B k² over k ≤ k_p/5, and (m/ħ) dℓ̄²/dt, also from the collision term; the plots turn
  *     it into the coherence length ℓ = ℓ̄ η_eq^(−1/3) for Bose +1 runs,
+ *   - the wide peak k_p of N_k ∝ k² n_k (parabola of ln N_k against ln k over the contiguous top
+ *     N_k ≳ max/2, weights tapered from 0.4 to 0.6 max; fields kpw_um_inv, kpwRate, kpwRateErr), robust to broad, bumpy tops where the smooth
+ *     peak hops, with (m/ħ) d(1/k_p²)/dt from the collision term and an uncertainty from the windows
+ *     max/2 and 0.7 max (each ± 0.1 max taper) and two steps,
  * and the occupation n_k at `snapshots` times spaced evenly in log(k_ξ/k_p).
  * The file is rewritten every 30 s, so a stopped run keeps what it reached.
  */
@@ -141,6 +145,41 @@ function kpSmooth(f: Float64Array, delta: number): number {
   return Math.exp(xc + Math.min(xHi, Math.max(xLo, -Bq / (2 * Aq))));
 }
 
+/**
+ * Wide peak: weighted least-squares parabola of ln N_k against ln k over the contiguous top around the
+ * maximum, N_k ∝ k² f, with weights rising linearly from 0 at N_k = (frac − 0.1)·max to 1 at (frac + 0.1)·max,
+ * so the fit moves continuously as points enter or leave the window (the rate differentiates it).
+ * A broad flat top with several bumps moves kpSmooth from bump to bump; this one does not.
+ */
+function kpWide(f: Float64Array, frac: number): number {
+  let iMax = 0, Nmax = -Infinity;
+  const N = new Float64Array(k.length);
+  for (let i = 0; i < k.length; i++) {
+    N[i] = k[i] * k[i] * f[i];
+    if (N[i] > Nmax) { Nmax = N[i]; iMax = i; }
+  }
+  const floor = (frac - 0.1) * Nmax;
+  let lo = iMax, hi = iMax;
+  while (lo > 0 && N[lo - 1] > floor) lo--;
+  while (hi < k.length - 1 && N[hi + 1] > floor) hi++;
+  if (hi - lo < 2) return k[iMax];
+  const xc = lnk[iMax];
+  let S0 = 0, S1 = 0, S2 = 0, S3 = 0, S4 = 0, T0 = 0, T1 = 0, T2 = 0;
+  for (let i = lo; i <= hi; i++) {
+    const w = Math.min(1, (N[i] - floor) / (0.2 * Nmax));
+    const x = lnk[i] - xc, x2 = x * x, y = Math.log(N[i]);
+    S0 += w; S1 += w * x; S2 += w * x2; S3 += w * x2 * x; S4 += w * x2 * x2;
+    T0 += w * y; T1 += w * x * y; T2 += w * x2 * y;
+  }
+  const det3 = (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) =>
+    a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g);
+  const D = det3(S4, S3, S2, S3, S2, S1, S2, S1, S0);
+  const Aq = det3(T2, S3, S2, T1, S2, S1, T0, S1, S0) / D;
+  const Bq = det3(S4, T2, S2, S3, T1, S1, S2, T0, S0) / D;
+  if (!(Aq < 0)) return k[iMax];
+  return Math.exp(xc + Math.min(lnk[hi] - xc, Math.max(lnk[lo] - xc, -Bq / (2 * Aq))));
+}
+
 const backend = localBackend();
 const t0 = Date.now();
 await backend.prepare({ level: accuracy, pMax, pMin, nGrid, model: MODEL_BY_ID[model].solver, kernel, loopScale, ncal: sc.ncal, sign: sc.sign });
@@ -206,8 +245,33 @@ function ellAt(f: Float64Array, kp: number): [number, number, number] {
   return [ell, est[0], err];
 }
 
+/**
+ * Wide peak kpWide(f, 0.5) and (m/ħ) d(1/k_p²)/dt from the collision term C left by rateAt;
+ * the uncertainty is the spread over the windows 0.5 and 0.7 of the maximum and the steps ε and 2ε.
+ */
+function kpWideAt(f: Float64Array): [number, number, number] {
+  const kp = kpWide(f, 0.5);
+  const ip = Math.max(0, k.findIndex((kk) => kk >= kp));
+  let cmax = 0;
+  for (let i = Math.max(0, ip - 40); i < Math.min(k.length, ip + 40); i++) cmax = Math.max(cmax, Math.abs(C[i]) / Math.max(f[i], 1e-300));
+  const eps0 = cmax > 0 ? 1e-3 / cmax : 1e-6;
+  const est: number[] = [];
+  for (const frac of [0.5, 0.7]) {
+    const kpf = kpWide(f, frac);
+    for (const eps of [eps0, 2 * eps0]) {
+      for (let i = 0; i < f.length; i++) { fp[i] = f[i] + eps * C[i]; fm[i] = f[i] - eps * C[i]; }
+      const dkp = (kpWide(fp, frac) - kpWide(fm, frac)) / (2 * eps);
+      est.push((-2 * dkp / (kpf * kpf * kpf)) / sc.t0_s / hbarOverM);
+    }
+  }
+  let err = 0;
+  for (const v of est) err = Math.max(err, Math.abs(v - est[0]));
+  return [kp, est[0], err];
+}
+
 const points = { t_s: [] as number[], X: [] as number[], rate: [] as number[], rateErr: [] as number[], poleWeight: [] as number[],
-  ell_um: [] as number[], ellRate: [] as number[], ellRateErr: [] as number[], N_rel: [] as number[], E_rel: [] as number[] };
+  ell_um: [] as number[], ellRate: [] as number[], ellRateErr: [] as number[], N_rel: [] as number[], E_rel: [] as number[],
+  kpw_um_inv: [] as number[], kpwRate: [] as number[], kpwRateErr: [] as number[] };
 
 /** ∫k^m f dk on the grid (trapezoid). */
 function moment(f: ArrayLike<number>, m: number): number {
@@ -263,12 +327,16 @@ const res = await runWKE({
       snapshots.N_rel.push(Nr); snapshots.E_rel.push(Er);
       while (nextSnap < nSnap && X >= snapTargets[nextSnap]) nextSnap++;
     }
-    if (Math.log10(X) - lastLogX < 0.02) return;
-    lastLogX = Math.log10(X);
+    // samples spaced in the wide peak, which moves smoothly (the smooth peak can stall, then jump)
+    const Xw = kXi / kpWide(f, 0.5);
+    if (Math.log10(Xw) - lastLogX < 0.02) return;
+    lastLogX = Math.log10(Xw);
     const [x, y, e, w] = rateAt(Float64Array.from(f));
     points.t_s.push(tau * sc.t0_s); points.X.push(x); points.rate.push(y); points.rateErr.push(e); points.poleWeight.push(w);
     const [ell, ey, ee] = ellAt(f, kXi / x);
     points.ell_um.push(ell); points.ellRate.push(ey); points.ellRateErr.push(ee);
+    const [kw, wy, we] = kpWideAt(f);
+    points.kpw_um_inv.push(kw); points.kpwRate.push(wy); points.kpwRateErr.push(we);
     points.N_rel.push(Nr); points.E_rel.push(Er);
     if (Date.now() - lastSave > 30000) { lastSave = Date.now(); save({ status: 'running' }); }
   },
