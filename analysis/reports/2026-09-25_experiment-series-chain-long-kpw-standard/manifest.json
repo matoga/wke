@@ -1,0 +1,102 @@
+{
+  "study": "experiment-series-chain-long-kpw-standard",
+  "question": "All 13 published series (protocol, a, N, V) with the bubble chain (N → ∞) and the Bose +1 terms, standard accuracy, run longer for the Fig 4c analogue, with the wide peak k_p of N_k (window N_k ≥ max/2) and its rate recorded: each run stops at k_ξ/k_p set to reach (ℓ/ξ)² ≈ 2000 (5% margin), past the box ceiling ℓ = V^(1/3) for the low-na series.",
+  "command": "npx tsx analysis/study.ts analysis/studies/experiment-series-chain-long-kpw-standard.json --no-plots --parallel 8",
+  "gitCommit": "8a99a00",
+  "gitDirty": false,
+  "started": "2026-09-25T09:42:46.787Z",
+  "finished": "2026-09-25T10:16:23.045Z",
+  "runs": [
+    {
+      "file": "runs/s08_measured_c1_400a0_chain.json",
+      "state": "measured_c1",
+      "a": 400,
+      "exitCode": 0,
+      "wall_s": 298.564
+    },
+    {
+      "file": "runs/s01_measured_c1_100a0_chain.json",
+      "state": "measured_c1",
+      "a": 100,
+      "exitCode": 0,
+      "wall_s": 446.239
+    },
+    {
+      "file": "runs/s02_measured_c2_100a0_chain.json",
+      "state": "measured_c2",
+      "a": 100,
+      "exitCode": 0,
+      "wall_s": 457.391
+    },
+    {
+      "file": "runs/s04_measured_c2_400a0_chain.json",
+      "state": "measured_c2",
+      "a": 400,
+      "exitCode": 0,
+      "wall_s": 514.727
+    },
+    {
+      "file": "runs/s07_measured_c3_200a0_chain.json",
+      "state": "measured_c3",
+      "a": 200,
+      "exitCode": 0,
+      "wall_s": 538.642
+    },
+    {
+      "file": "runs/s06_measured_c1_200a0_chain.json",
+      "state": "measured_c1",
+      "a": 200,
+      "exitCode": 0,
+      "wall_s": 544.793
+    },
+    {
+      "file": "runs/s03_measured_c3_100a0_chain.json",
+      "state": "measured_c3",
+      "a": 100,
+      "exitCode": 0,
+      "wall_s": 641.442
+    },
+    {
+      "file": "runs/s10_measured_c1_400a0_chain.json",
+      "state": "measured_c1",
+      "a": 400,
+      "exitCode": 0,
+      "wall_s": 303.271
+    },
+    {
+      "file": "runs/s09_measured_c1_70a0_chain.json",
+      "state": "measured_c1",
+      "a": 70,
+      "exitCode": 0,
+      "wall_s": 539.097
+    },
+    {
+      "file": "runs/s11_measured_c1_140a0_chain.json",
+      "state": "measured_c1",
+      "a": 140,
+      "exitCode": 0,
+      "wall_s": 475.729
+    },
+    {
+      "file": "runs/s13_measured_c3_50a0_chain.json",
+      "state": "measured_c3",
+      "a": 50,
+      "exitCode": 0,
+      "wall_s": 570.148
+    },
+    {
+      "file": "runs/s05_measured_c1_400a0_chain.json",
+      "state": "measured_c1",
+      "a": 400,
+      "exitCode": 0,
+      "wall_s": 1220.732
+    },
+    {
+      "file": "runs/s12_measured_c1_280a0_chain.json",
+      "state": "measured_c1",
+      "a": 280,
+      "exitCode": 0,
+      "wall_s": 1501.526
+    }
+  ]
+}
