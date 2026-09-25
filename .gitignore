@@ -4,3 +4,4 @@ dist/
 analysis/results/
 analysis/.venv/
 __pycache__/
+fig4c-standalone/out/

@@ -38,7 +38,7 @@ const FORBIDDEN = new Set([
 ]);
 
 const TEXT_EXT = new Set(['.ts', '.tsx', '.js', '.mjs', '.css', '.html', '.md', '.json', '.svg', '.txt', '.py']);
-const SCAN = ['src', 'tests', 'scripts', 'analysis', 'docs', 'shared-data', 'public', 'dist', 'README.md', 'index.html', 'package.json', 'vite.config.ts', 'tsconfig.json'];
+const SCAN = ['src', 'tests', 'scripts', 'analysis', 'fig4c-standalone', 'docs', 'shared-data', 'public', 'dist', 'README.md', 'index.html', 'package.json', 'vite.config.ts', 'tsconfig.json'];
 
 function walk(p: string, out: string[]): void {
   if (!existsSync(p)) return;
@@ -79,8 +79,8 @@ for (const file of files) {
   }
   if (/\/Users\/|~\/|[A-Z]:\\Users\\/.test(text)) failures.push(`${rel}: contains a local absolute path`);
   if (!isData && !isBundle && /\barxiv\b|\b\d{4}\.\d{5}\b/i.test(text)) failures.push(`${rel}: contains a preprint identifier`);
-  // the analysis tools are partly Python and name their own scripts
-  if (!isBundle && !rel.startsWith('analysis') && /\b[\w-]+\.py\b/.test(text)) failures.push(`${rel}: refers to a script outside this app`);
+  // the analysis tools and the standalone Fig 4c folder are partly Python and name their own scripts
+  if (!isBundle && !rel.startsWith('analysis') && !rel.startsWith('fig4c-standalone') && /\b[\w-]+\.py\b/.test(text)) failures.push(`${rel}: refers to a script outside this app`);
   // Library code in the bundle carries its own symbol tables (the typesetter
   // maps "---" to an em dash); the rendered text is checked by the UI test.
   if (text.includes('\u2014') && !(isBundle && extname(file) === '.js')) failures.push(`${rel}: contains an em dash`);

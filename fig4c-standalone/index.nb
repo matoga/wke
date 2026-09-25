@@ -1,0 +1,868 @@
+(* Content-type: application/vnd.wolfram.mathematica *)
+
+(*** Wolfram Notebook File ***)
+(* http://www.wolfram.com/nb *)
+
+(* CreatedBy='Wolfram 15.0' *)
+
+(*CacheID: 234*)
+(* Internal cache information:
+NotebookFileLineBreakTest
+NotebookFileLineBreakTest
+NotebookDataPosition[       154,          7]
+NotebookDataLength[     38068,        858]
+NotebookOptionsPosition[     37403,        839]
+NotebookOutlinePosition[     37793,        855]
+CellTagsIndexPosition[     37750,        852]
+WindowFrame->Normal*)
+
+(* Beginning of Notebook Content *)
+Notebook[{
+Cell[BoxData[{
+ RowBox[{
+  RowBox[{"Needs", "[", "\"\<AMOP`\>\"", "]"}], 
+  ";"}], "\[IndentingNewLine]", 
+ RowBox[{
+  RowBox[{"Needs", "[", "\"\<Thesis`\>\"", "]"}], ";"}]}], "Input",
+ CellChangeTimes->{{3.9993307603691597`*^9, 3.999330768794916*^9}},
+ CellLabel->"In[7]:=",ExpressionUUID->"afd8f090-eab7-46f0-9363-c09bda133276"],
+
+Cell[BoxData[
+ RowBox[{"\[IndentingNewLine]", 
+  RowBox[{
+   RowBox[{
+    RowBox[{"data", "=", 
+     RowBox[{"Get", "[", 
+      RowBox[{"$nb", " ", "<>", " ", "\"\<out/fig4c.wl\>\""}], "]"}]}], ";"}],
+    "\[IndentingNewLine]", "\n", 
+   RowBox[{
+    RowBox[{
+     RowBox[{"pts", "[", "k_", "]"}], ":=", 
+     RowBox[{"Transpose", "[", 
+      RowBox[{"{", 
+       RowBox[{
+        RowBox[{"data", "[", 
+         RowBox[{"k", "<>", "\"\<__ell_over_xi_sq\>\""}], "]"}], ",", 
+        RowBox[{"MapThread", "[", 
+         RowBox[{"Around", ",", 
+          RowBox[{"{", 
+           RowBox[{
+            RowBox[{"data", "[", 
+             RowBox[{"k", "<>", "\"\<__rate\>\""}], "]"}], ",", 
+            RowBox[{"data", "[", 
+             RowBox[{"k", "<>", "\"\<__rate_err\>\""}], "]"}]}], "}"}]}], 
+         "]"}]}], "}"}], "]"}]}], ";"}]}]}]], "Input",
+ CellChangeTimes->{{3.999330775755747*^9, 3.9993307757558517`*^9}, {
+  3.999330850380044*^9, 3.9993308661300583`*^9}},
+ CellLabel->"In[12]:=",ExpressionUUID->"d7dfd2c2-b723-42e8-bf8c-8252cc06a855"],
+
+Cell[CellGroupData[{
+
+Cell[BoxData[
+ RowBox[{"\[IndentingNewLine]", 
+  RowBox[{"Show", "[", "\[IndentingNewLine]", 
+   RowBox[{"ListPlot", "[", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{
+       RowBox[{"pts", "[", "\"\<wke_all\>\"", "]"}], ",", 
+       RowBox[{"pts", "[", "\"\<exp\>\"", "]"}]}], "}"}], ",", 
+     "\[IndentingNewLine]", 
+     RowBox[{"PlotStyle", "->", 
+      RowBox[{"{", 
+       RowBox[{"StandardBlue", ",", "cc"}], "}"}]}], ",", 
+     "\[IndentingNewLine]", 
+     RowBox[{"Prolog", "->", 
+      RowBox[{"{", 
+       RowBox[{
+        RowBox[{"Line", "[", 
+         RowBox[{"{", 
+          RowBox[{
+           RowBox[{"{", 
+            RowBox[{"0", ",", "0"}], "}"}], ",", 
+           RowBox[{"{", 
+            RowBox[{"2100", ",", 
+             RowBox[{"2100", "/", "56"}]}], "}"}]}], "}"}], "]"}], ",", 
+        "Dashed", ",", 
+        RowBox[{"Line", "[", 
+         RowBox[{"{", 
+          RowBox[{
+           RowBox[{"{", 
+            RowBox[{"0", ",", "3.4"}], "}"}], ",", 
+           RowBox[{"{", 
+            RowBox[{"2100", ",", "3.4"}], "}"}]}], "}"}], "]"}]}], "}"}]}], ",",
+      "\[IndentingNewLine]", 
+     RowBox[{"PlotMarkers", "->", 
+      RowBox[{"{", 
+       RowBox[{
+        RowBox[{"MarkerCirc", "[", 
+         RowBox[{"12", ",", "cc"}], "]"}], ",", " ", 
+        RowBox[{"MarkerHexa", "[", 
+         RowBox[{"12", ",", "StandardGray"}], "]"}]}], "}"}]}], ",", 
+     "\[IndentingNewLine]", 
+     RowBox[{"PlotRange", "->", 
+      RowBox[{"{", 
+       RowBox[{
+        RowBox[{"{", 
+         RowBox[{"0", ",", "1600"}], "}"}], ",", 
+        RowBox[{"{", 
+         RowBox[{"0", ",", "All"}], "}"}]}], "}"}]}], ",", " ", 
+     RowBox[{"AspectRatio", "->", "0.8"}], ",", 
+     RowBox[{"FrameLabel", "->", 
+      RowBox[{"{", 
+       RowBox[{"\"\<(\[ScriptL]/\[Xi]\\!\\(\\*SuperscriptBox[\\()\\), \
+\\(2\\)]\\)\>\"", 
+        ",", "\"\<(m/\[HBar]) \
+d\[ScriptL]\.b2/d\!\(\*StyleBox[\"t\",FontSlant->\"Italic\"]\)\>\""}], 
+       "}"}]}]}], "]"}], "\[IndentingNewLine]", "]"}]}]], "Input",
+ CellChangeTimes->{{3.999330869058029*^9, 
+  3.999331105455504*^9}},ExpressionUUID->"f43ecf49-fb5a-44f9-922c-\
+6909bbf6432f"],
+
+Cell[BoxData[
+ GraphicsBox[{{{
+     {RGBColor[0.4, 0.6, 1], AbsoluteThickness[2], 
+      StyleBox[{{}, {
+         LineBox[{{13.54727458056279, 0.5081964624204747}, {13.54727458056279,
+           0.8739770410101451}}], 
+         LineBox[{{13.54727458056279, 0.8739770410101451}, {13.54727458056279,
+           1.2397576195998155`}}]}},
+       Antialiasing->False,
+       FontFamily->"Source Sans Pro"]}, 
+     {RGBColor[0.4, 0.6, 1], AbsoluteThickness[2], 
+      StyleBox[{{}, {
+         LineBox[{{25.101980037627527`, 1.2424177192485448`}, {
+          25.101980037627527`, 1.4924198727211084`}}], 
+         LineBox[{{25.101980037627527`, 1.4924198727211084`}, {
+          25.101980037627527`, 1.742422026193672}}]}},
+       Antialiasing->False,
+       FontFamily->"Source Sans Pro"]}, 
+     {RGBColor[0.4, 0.6, 1], AbsoluteThickness[2], 
+      StyleBox[{{}, {
+         LineBox[{{56.29785477953601, 2.934438021586209}, {56.29785477953601, 
+          3.387032581577525}}], 
+         LineBox[{{56.29785477953601, 3.387032581577525}, {56.29785477953601, 
+          3.8396271415688408`}}]}},
+       Antialiasing->False,
+       FontFamily->"Source Sans Pro"]}, 
+     {RGBColor[0.4, 0.6, 1], AbsoluteThickness[2], 
+      StyleBox[{{}, {
+         LineBox[{{125.93191533069984`, 5.757161319449259}, {
+          125.93191533069984`, 5.988303798385267}}], 
+         LineBox[{{125.93191533069984`, 5.988303798385267}, {
+          125.93191533069984`, 6.219446277321276}}]}},
+       Antialiasing->False,
+       FontFamily->"Source Sans Pro"]}, 
+     {RGBColor[0.4, 0.6, 1], AbsoluteThickness[2], 
+      StyleBox[{{}, {
+         LineBox[{{145.37033505326923`, 7.137576509034753}, {
+          145.37033505326923`, 7.370585589129779}}], 
+         LineBox[{{145.37033505326923`, 7.370585589129779}, {
+          145.37033505326923`, 7.603594669224805}}]}},
+       Antialiasing->False,
+       FontFamily->"Source Sans Pro"]}, 
+     {RGBColor[0.4, 0.6, 1], AbsoluteThickness[2], 
+      StyleBox[{{}, {
+         LineBox[{{268.0430121021818, 8.247690786531976}, {268.0430121021818, 
+          8.706224911017669}}], 
+         LineBox[{{268.0430121021818, 8.706224911017669}, {268.0430121021818, 
+          9.164759035503362}}]}},
+       Antialiasing->False,
+       FontFamily->"Source Sans Pro"]}, 
+     {RGBColor[0.4, 0.6, 1], AbsoluteThickness[2], 
+      StyleBox[{{}, {
+         LineBox[{{387.8463143188271, 9.320486617510225}, {387.8463143188271, 
+          9.548016848719428}}], 
+         LineBox[{{387.8463143188271, 9.548016848719428}, {387.8463143188271, 
+          9.77554707992863}}]}},
+       Antialiasing->False,
+       FontFamily->"Source Sans Pro"]}, 
+     {RGBColor[0.4, 0.6, 1], AbsoluteThickness[2], 
+      StyleBox[{{}, {
+         LineBox[{{509.1187601790455, 9.930132106641041}, {509.1187601790455, 
+          10.159948128307661`}}], 
+         LineBox[{{509.1187601790455, 10.159948128307661`}, {
+          509.1187601790455, 10.389764149974281`}}]}},
+       Antialiasing->False,
+       FontFamily->"Source Sans Pro"]}, 
+     {RGBColor[0.4, 0.6, 1], AbsoluteThickness[2], 
+      StyleBox[{{}, {
+         LineBox[{{692.2330497006793, 10.261713184921247`}, {
+          692.2330497006793, 10.449421585525123`}}], 
+         LineBox[{{692.2330497006793, 10.449421585525123`}, {
+          692.2330497006793, 10.637129986128999`}}]}},
+       Antialiasing->False,
+       FontFamily->"Source Sans Pro"]}, 
+     {RGBColor[0.4, 0.6, 1], AbsoluteThickness[2], 
+      StyleBox[{{}, {
+         LineBox[{{855.6920111427044, 10.44871872109041}, {855.6920111427044, 
+          10.572818632258016`}}], 
+         LineBox[{{855.6920111427044, 10.572818632258016`}, {
+          855.6920111427044, 10.696918543425623`}}]}},
+       Antialiasing->False,
+       FontFamily->"Source Sans Pro"]}, 
+     {RGBColor[0.4, 0.6, 1], AbsoluteThickness[2], 
+      StyleBox[{{}, {
+         LineBox[{{983.3867479237821, 10.544232120059164`}, {
+          983.3867479237821, 10.657722479221414`}}], 
+         LineBox[{{983.3867479237821, 10.657722479221414`}, {
+          983.3867479237821, 10.771212838383665`}}]}},
+       Antialiasing->False,
+       FontFamily->"Source Sans Pro"]}, 
+     {RGBColor[0.4, 0.6, 1], AbsoluteThickness[2], 
+      StyleBox[{{}, {
+         LineBox[{{1145.3687388384485`, 10.719989349022157`}, {
+          1145.3687388384485`, 10.803388559643421`}}], 
+         LineBox[{{1145.3687388384485`, 10.803388559643421`}, {
+          1145.3687388384485`, 10.886787770264686`}}]}},
+       Antialiasing->False,
+       FontFamily->"Source Sans Pro"]}, 
+     {RGBColor[0.4, 0.6, 1], AbsoluteThickness[2], 
+      StyleBox[{{}, {
+         LineBox[{{1326.4347132043533`, 10.853963479033936`}, {
+          1326.4347132043533`, 10.907191790675636`}}], 
+         LineBox[{{1326.4347132043533`, 10.907191790675636`}, {
+          1326.4347132043533`, 10.960420102317336`}}]}},
+       Antialiasing->False,
+       FontFamily->"Source Sans Pro"]}, 
+     {RGBColor[0.4, 0.6, 1], AbsoluteThickness[2], 
+      StyleBox[{{}, {
+         LineBox[{{1480.8663977623826`, 10.929146086993217`}, {
+          1480.8663977623826`, 10.985392030561295`}}], 
+         LineBox[{{1480.8663977623826`, 10.985392030561295`}, {
+          1480.8663977623826`, 11.041637974129372`}}]}},
+       Antialiasing->False,
+       FontFamily->"Source Sans Pro"]}, 
+     {RGBColor[0.4, 0.6, 1], AbsoluteThickness[2], 
+      StyleBox[{{}, {
+         LineBox[{{1640.9826710977595`, 11.020927946782248`}, {
+          1640.9826710977595`, 11.076407514124309`}}], 
+         LineBox[{{1640.9826710977595`, 11.076407514124309`}, {
+          1640.9826710977595`, 11.13188708146637}}]}},
+       Antialiasing->False,
+       FontFamily->"Source Sans Pro"]}, 
+     {RGBColor[0.4, 0.6, 1], AbsoluteThickness[2], 
+      StyleBox[{{}, {
+         LineBox[{{1794.1639651113223`, 11.063244379865912`}, {
+          1794.1639651113223`, 11.121951290642043`}}], 
+         LineBox[{{1794.1639651113223`, 11.121951290642043`}, {
+          1794.1639651113223`, 11.180658201418174`}}]}},
+       Antialiasing->False,
+       FontFamily->"Source Sans Pro"]}, 
+     {RGBColor[0.4, 0.6, 1], AbsoluteThickness[2], 
+      StyleBox[{{}, {
+         LineBox[{{1958.8435715702471`, 11.11029106896169}, {
+          1958.8435715702471`, 11.175647048342285`}}], 
+         LineBox[{{1958.8435715702471`, 11.175647048342285`}, {
+          1958.8435715702471`, 11.24100302772288}}]}},
+       Antialiasing->False,
+       FontFamily->"Source Sans Pro"]}}, {
+     {GrayLevel[0.62], AbsoluteThickness[2], 
+      StyleBox[{{}, {
+         LineBox[{{10.365589763098287`, 0.09513207245183056}, {
+          10.365589763098287`, 0.13137051416677367`}}], 
+         LineBox[{{10.365589763098287`, 0.13137051416677367`}, {
+          10.365589763098287`, 0.1676089558817168}}]}},
+       Antialiasing->False,
+       FontFamily->"Source Sans Pro"]}, 
+     {GrayLevel[0.62], AbsoluteThickness[2], 
+      StyleBox[{{}, {
+         LineBox[{{28.037445826323808`, 0.33620117383936704`}, {
+          28.037445826323808`, 0.4150910104421211}}], 
+         LineBox[{{28.037445826323808`, 0.4150910104421211}, {
+          28.037445826323808`, 0.49398084704487516`}}]}},
+       Antialiasing->False,
+       FontFamily->"Source Sans Pro"]}, 
+     {GrayLevel[0.62], AbsoluteThickness[2], 
+      StyleBox[{{}, {
+         LineBox[{{45.036959805425596`, 0.5598920714127487}, {
+          45.036959805425596`, 0.6378219584476809}}], 
+         LineBox[{{45.036959805425596`, 0.6378219584476809}, {
+          45.036959805425596`, 0.7157518454826131}}]}},
+       Antialiasing->False,
+       FontFamily->"Source Sans Pro"]}, 
+     {GrayLevel[0.62], AbsoluteThickness[2], 
+      StyleBox[{{}, {
+         LineBox[{{65.58494031568334, 0.7955625953050379}, {65.58494031568334,
+           0.9223255157300303}}], 
+         LineBox[{{65.58494031568334, 0.9223255157300303}, {65.58494031568334,
+           1.0490884361550226`}}]}},
+       Antialiasing->False,
+       FontFamily->"Source Sans Pro"]}, 
+     {GrayLevel[0.62], AbsoluteThickness[2], 
+      StyleBox[{{}, {
+         LineBox[{{73.94788652056423, 0.8701092853092348}, {73.94788652056423,
+           0.9675811849306396}}], 
+         LineBox[{{73.94788652056423, 0.9675811849306396}, {73.94788652056423,
+           1.0650530845520445`}}]}},
+       Antialiasing->False,
+       FontFamily->"Source Sans Pro"]}, 
+     {GrayLevel[0.62], AbsoluteThickness[2], 
+      StyleBox[{{}, {
+         LineBox[{{116.4094709536898, 1.560787185395763}, {116.4094709536898, 
+          1.676717227956456}}], 
+         LineBox[{{116.4094709536898, 1.676717227956456}, {116.4094709536898, 
+          1.7926472705171488`}}]}},
+       Antialiasing->False,
+       FontFamily->"Source Sans Pro"]}, 
+     {GrayLevel[0.62], AbsoluteThickness[2], 
+      StyleBox[{{}, {
+         LineBox[{{151.21833666789993`, 2.3179528956663367`}, {
+          151.21833666789993`, 2.4539342043073855`}}], 
+         LineBox[{{151.21833666789993`, 2.4539342043073855`}, {
+          151.21833666789993`, 2.5899155129484344`}}]}},
+       Antialiasing->False,
+       FontFamily->"Source Sans Pro"]}, 
+     {GrayLevel[0.62], AbsoluteThickness[2], 
+      StyleBox[{{}, {
+         LineBox[{{204.38388046921793`, 2.624909196003688}, {
+          204.38388046921793`, 2.756167606335505}}], 
+         LineBox[{{204.38388046921793`, 2.756167606335505}, {
+          204.38388046921793`, 2.887426016667322}}]}},
+       Antialiasing->False,
+       FontFamily->"Source Sans Pro"]}, 
+     {GrayLevel[0.62], AbsoluteThickness[2], 
+      StyleBox[{{}, {
+         LineBox[{{262.39312886032224`, 2.817361605970412}, {
+          262.39312886032224`, 3.0262994796439155`}}], 
+         LineBox[{{262.39312886032224`, 3.0262994796439155`}, {
+          262.39312886032224`, 3.235237353317419}}]}},
+       Antialiasing->False,
+       FontFamily->"Source Sans Pro"]}, 
+     {GrayLevel[0.62], AbsoluteThickness[2], 
+      StyleBox[{{}, {
+         LineBox[{{358.9189032045133, 3.3671832368019414`}, {
+          358.9189032045133, 3.4927219400933582`}}], 
+         LineBox[{{358.9189032045133, 3.4927219400933582`}, {
+          358.9189032045133, 3.618260643384775}}]}},
+       Antialiasing->False,
+       FontFamily->"Source Sans Pro"]}, 
+     {GrayLevel[0.62], AbsoluteThickness[2], 
+      StyleBox[{{}, {
+         LineBox[{{525.856427649417, 3.602569470198869}, {525.856427649417, 
+          3.781995228243536}}], 
+         LineBox[{{525.856427649417, 3.781995228243536}, {525.856427649417, 
+          3.9614209862882026`}}]}},
+       Antialiasing->False,
+       FontFamily->"Source Sans Pro"]}, 
+     {GrayLevel[0.62], AbsoluteThickness[2], 
+      StyleBox[{{}, {
+         LineBox[{{684.3926547192336, 2.5967047242313326`}, {
+          684.3926547192336, 2.9531778823811754`}}], 
+         LineBox[{{684.3926547192336, 2.9531778823811754`}, {
+          684.3926547192336, 3.309651040531018}}]}},
+       Antialiasing->False,
+       FontFamily->"Source Sans Pro"]}, 
+     {GrayLevel[0.62], AbsoluteThickness[2], 
+      StyleBox[{{}, {
+         LineBox[{{838.4632411686417, 2.690110546707822}, {838.4632411686417, 
+          3.1307685267015897`}}], 
+         LineBox[{{838.4632411686417, 3.1307685267015897`}, {
+          838.4632411686417, 3.5714265066953574`}}]}},
+       Antialiasing->False,
+       FontFamily->"Source Sans Pro"]}, 
+     {GrayLevel[0.62], AbsoluteThickness[2], 
+      StyleBox[{{}, {
+         LineBox[{{1011.5533355224494`, 3.16960081408824}, {
+          1011.5533355224494`, 3.6950480723235435`}}], 
+         LineBox[{{1011.5533355224494`, 3.6950480723235435`}, {
+          1011.5533355224494`, 4.220495330558847}}]}},
+       Antialiasing->False,
+       FontFamily->"Source Sans Pro"]}, 
+     {GrayLevel[0.62], AbsoluteThickness[2], 
+      StyleBox[{{}, {
+         LineBox[{{1167.7617210184353`, 2.4592703985806637`}, {
+          1167.7617210184353`, 3.0810493846387073`}}], 
+         LineBox[{{1167.7617210184353`, 3.0810493846387073`}, {
+          1167.7617210184353`, 3.702828370696751}}]}},
+       Antialiasing->False,
+       FontFamily->"Source Sans Pro"]}}}, 
+   InterpretationBox[{
+     TagBox[{
+       TagBox[
+        {RGBColor[0.4, 0.6, 1], PointSize[0.012833333333333334`], 
+         AbsoluteThickness[2], 
+         StyleBox[GeometricTransformationBox[InsetBox[
+            FormBox[
+             StyleBox[
+              GraphicsBox[
+               {RGBColor[0.91, 0.94, 1.], EdgeForm[{RGBColor[0.4, 0.6, 1], 
+                Thickness[0.24]}], DiskBox[{0, 0}]},
+               ImagePadding->NCache[
+                 Rational[3, 2], 1.5],
+               ImageSize->12],
+              StripOnInput->False,
+              GraphicsBoxOptions->{DefaultBaseStyle->Directive[
+                PointSize[0.012833333333333334`], 
+                AbsoluteThickness[2], FontFamily -> "Source Sans Pro", 
+                RGBColor[0.4, 0.6, 1]]}],
+             TraditionalForm], {0., 0.}], {{{13.54727458056279, 
+           0.8739770410101451}}, {{25.101980037627527`, 
+           1.4924198727211084`}}, {{56.29785477953601, 3.387032581577525}}, {{
+           125.93191533069984`, 5.988303798385267}}, {{145.37033505326923`, 
+           7.370585589129779}}, {{268.0430121021818, 8.706224911017669}}, {{
+           387.8463143188271, 9.548016848719428}}, {{509.1187601790455, 
+           10.159948128307661`}}, {{692.2330497006793, 
+           10.449421585525123`}}, {{855.6920111427044, 
+           10.572818632258016`}}, {{983.3867479237821, 
+           10.657722479221414`}}, {{1145.3687388384485`, 
+           10.803388559643421`}}, {{1326.4347132043533`, 
+           10.907191790675636`}}, {{1480.8663977623826`, 
+           10.985392030561295`}}, {{1640.9826710977595`, 
+           11.076407514124309`}}, {{1794.1639651113223`, 
+           11.121951290642043`}}, {{1958.8435715702471`, 
+           11.175647048342285`}}}],
+          FontFamily->"Source Sans Pro"]},
+        Annotation[#, "Charting`Private`Tag#1"]& ], 
+       TagBox[
+        {GrayLevel[0.62], PointSize[0.012833333333333334`], AbsoluteThickness[
+         2], 
+         StyleBox[GeometricTransformationBox[InsetBox[
+            FormBox[
+             StyleBox[
+              GraphicsBox[
+               {GrayLevel[0.943], EdgeForm[{GrayLevel[0.62], Thickness[
+                0.22]}], 
+                PolygonBox[
+                 NCache[{{Rational[1, 2], Rational[-1, 2] 3^Rational[1, 2]}, {
+                   1, 0}, {Rational[1, 2], Rational[1, 2] 3^Rational[1, 2]}, {
+                   Rational[-1, 2], Rational[1, 2] 3^Rational[1, 2]}, {-1, 
+                   0}, {Rational[-1, 2], Rational[-1, 2] 
+                    3^Rational[1, 2]}}, {{0.5, -0.8660254037844386}, {1, 0}, {
+                   0.5, 0.8660254037844386}, {-0.5, 0.8660254037844386}, {-1, 
+                   0}, {-0.5, -0.8660254037844386}}]]},
+               ImagePadding->NCache[
+                 Rational[13, 8], 1.625],
+               ImageSize->13],
+              StripOnInput->False,
+              GraphicsBoxOptions->{DefaultBaseStyle->Directive[
+                PointSize[0.012833333333333334`], 
+                AbsoluteThickness[2], FontFamily -> "Source Sans Pro", 
+                GrayLevel[0.62]]}],
+             TraditionalForm], {0., 0.}], {{{10.365589763098287`, 
+           0.13137051416677367`}}, {{28.037445826323808`, 
+           0.4150910104421211}}, {{45.036959805425596`, 
+           0.6378219584476809}}, {{65.58494031568334, 0.9223255157300303}}, {{
+           73.94788652056423, 0.9675811849306396}}, {{116.4094709536898, 
+           1.676717227956456}}, {{151.21833666789993`, 
+           2.4539342043073855`}}, {{204.38388046921793`, 
+           2.756167606335505}}, {{262.39312886032224`, 
+           3.0262994796439155`}}, {{358.9189032045133, 
+           3.4927219400933582`}}, {{525.856427649417, 3.781995228243536}}, {{
+           684.3926547192336, 2.9531778823811754`}}, {{838.4632411686417, 
+           3.1307685267015897`}}, {{1011.5533355224494`, 
+           3.6950480723235435`}}, {{1167.7617210184353`, 
+           3.0810493846387073`}}}],
+          FontFamily->"Source Sans Pro"]},
+        Annotation[#, "Charting`Private`Tag#2"]& ]},
+      {"WolframDynamicHighlight", <|
+       "Label" -> {"XYLabel"}, "Ball" -> {"IndicatedBall"}|>}], 
+     StyleBox[
+      DynamicBox[(Charting`HighlightActionBox["DynamicHighlight", {}, 
+        Slot["HighlightElements"], 
+        Slot["LayoutOptions"], 
+        Slot["Meta"], 
+        Charting`HighlightActionFunction["DynamicHighlight", {{
+           Annotation[{
+             Directive[
+              PointSize[0.012833333333333334`], 
+              AbsoluteThickness[2], FontFamily -> "Source Sans Pro", 
+              RGBColor[0.4, 0.6, 1]], 
+             GeometricTransformation[
+              Inset[
+               Style[
+                Graphics[{
+                  EdgeForm[
+                   Directive[
+                    Thickness[0.24], 
+                    RGBColor[0.4, 0.6, 1]]], 
+                  Directive[
+                   RGBColor[0.91, 0.94, 1.]], 
+                  Disk[{0, 0}]}, ImageSize -> 12, ImagePadding -> 
+                 Rational[3, 2]], 
+                GraphicsBoxOptions -> {DefaultBaseStyle -> Directive[
+                    PointSize[0.012833333333333334`], 
+                    AbsoluteThickness[2], FontFamily -> "Source Sans Pro", 
+                    RGBColor[0.4, 0.6, 1]]}], {0., 0.}], {{{13.54727458056279,
+               0.8739770410101451}}, {{25.101980037627527`, 
+              1.4924198727211084`}}, {{56.29785477953601, 
+              3.387032581577525}}, {{125.93191533069984`, 
+              5.988303798385267}}, {{145.37033505326923`, 
+              7.370585589129779}}, {{268.0430121021818, 
+              8.706224911017669}}, {{387.8463143188271, 
+              9.548016848719428}}, {{509.1187601790455, 
+              10.159948128307661`}}, {{692.2330497006793, 
+              10.449421585525123`}}, {{855.6920111427044, 
+              10.572818632258016`}}, {{983.3867479237821, 
+              10.657722479221414`}}, {{1145.3687388384485`, 
+              10.803388559643421`}}, {{1326.4347132043533`, 
+              10.907191790675636`}}, {{1480.8663977623826`, 
+              10.985392030561295`}}, {{1640.9826710977595`, 
+              11.076407514124309`}}, {{1794.1639651113223`, 
+              11.121951290642043`}}, {{1958.8435715702471`, 
+              11.175647048342285`}}}]}, "Charting`Private`Tag#1"], 
+           Annotation[{
+             Directive[
+              PointSize[0.012833333333333334`], 
+              AbsoluteThickness[2], FontFamily -> "Source Sans Pro", 
+              GrayLevel[0.62]], 
+             GeometricTransformation[
+              Inset[
+               Style[
+                Graphics[{
+                  EdgeForm[
+                   Directive[
+                    Thickness[0.22], 
+                    GrayLevel[0.62]]], 
+                  Directive[
+                   GrayLevel[0.943]], 
+                  Polygon[{{
+                    Rational[1, 2], Rational[-1, 2] 3^Rational[1, 2]}, {1, 
+                    0}, {
+                    Rational[1, 2], Rational[1, 2] 3^Rational[1, 2]}, {
+                    Rational[-1, 2], Rational[1, 2] 3^Rational[1, 2]}, {-1, 
+                    0}, {
+                    Rational[-1, 2], Rational[-1, 2] 3^Rational[1, 2]}}]}, 
+                 ImageSize -> 13, ImagePadding -> Rational[13, 8]], 
+                GraphicsBoxOptions -> {DefaultBaseStyle -> Directive[
+                    PointSize[0.012833333333333334`], 
+                    AbsoluteThickness[2], FontFamily -> "Source Sans Pro", 
+                    GrayLevel[0.62]]}], {0., 0.}], {{{10.365589763098287`, 
+              0.13137051416677367`}}, {{28.037445826323808`, 
+              0.4150910104421211}}, {{45.036959805425596`, 
+              0.6378219584476809}}, {{65.58494031568334, 
+              0.9223255157300303}}, {{73.94788652056423, 
+              0.9675811849306396}}, {{116.4094709536898, 
+              1.676717227956456}}, {{151.21833666789993`, 
+              2.4539342043073855`}}, {{204.38388046921793`, 
+              2.756167606335505}}, {{262.39312886032224`, 
+              3.0262994796439155`}}, {{358.9189032045133, 
+              3.4927219400933582`}}, {{525.856427649417, 
+              3.781995228243536}}, {{684.3926547192336, 
+              2.9531778823811754`}}, {{838.4632411686417, 
+              3.1307685267015897`}}, {{1011.5533355224494`, 
+              3.6950480723235435`}}, {{1167.7617210184353`, 
+              3.0810493846387073`}}}]}, "Charting`Private`Tag#2"]}}, <|
+         "HighlightElements" -> <|
+           "Label" -> {"XYLabel"}, "Ball" -> {"IndicatedBall"}|>, 
+          "LayoutOptions" -> <|
+           "PanelPlotLayout" -> <||>, 
+            "PlotRange" -> {{0., 1600.}, {0., 11.24100302772288}}, 
+            "Frame" -> {{True, True}, {True, True}}, "AxesOrigin" -> {0, 0}, 
+            "ImageSize" -> {350, 280.}, "Axes" -> {False, False}, 
+            "LabelStyle" -> {
+              Directive[{
+                GrayLevel[0], 24, FontFamily -> "Source Sans Pro"}], 
+              Directive[{
+                GrayLevel[0], 24, FontFamily -> "Source Sans Pro"}], 
+              Directive[{
+                GrayLevel[0], 24, FontFamily -> "Source Sans Pro"}]}, 
+            "AspectRatio" -> 0.8, "DefaultStyle" -> {
+              Directive[
+               PointSize[0.012833333333333334`], 
+               AbsoluteThickness[2], FontFamily -> "Source Sans Pro", 
+               GrayLevel[0.62]], 
+              Directive[
+               PointSize[0.012833333333333334`], 
+               AbsoluteThickness[2], FontFamily -> "Source Sans Pro", 
+               RGBColor[0.4, 0.6, 1]]}, 
+            "HighlightLabelingFunctions" -> <|"CoordinatesToolOptions" -> ({
+                (Identity[#]& )[
+                 Part[#, 1]], 
+                (Identity[#]& )[
+                 Part[#, 2]]}& ), 
+              "ScalingFunctions" -> {{Identity, Identity}, {
+                Identity, Identity}}|>, "Primitives" -> {}, "GCFlag" -> 
+            False|>, 
+          "Meta" -> <|
+           "DefaultHighlight" -> {"Dynamic", None}, "Index" -> {}, "Function" -> 
+            ListPlot, "GroupHighlight" -> False|>|>]]& )[<|
+        "HighlightElements" -> <|
+          "Label" -> {"XYLabel"}, "Ball" -> {"IndicatedBall"}|>, 
+         "LayoutOptions" -> <|
+          "PanelPlotLayout" -> <||>, 
+           "PlotRange" -> {{0., 1600.}, {0., 11.24100302772288}}, 
+           "Frame" -> {{True, True}, {True, True}}, "AxesOrigin" -> {0, 0}, 
+           "ImageSize" -> {350, 280.}, "Axes" -> {False, False}, "LabelStyle" -> {
+             Directive[{
+               GrayLevel[0], 24, FontFamily -> "Source Sans Pro"}], 
+             Directive[{
+               GrayLevel[0], 24, FontFamily -> "Source Sans Pro"}], 
+             Directive[{
+               GrayLevel[0], 24, FontFamily -> "Source Sans Pro"}]}, 
+           "AspectRatio" -> 0.8, "DefaultStyle" -> {
+             Directive[
+              PointSize[0.012833333333333334`], 
+              AbsoluteThickness[2], FontFamily -> "Source Sans Pro", 
+              GrayLevel[0.62]], 
+             Directive[
+              PointSize[0.012833333333333334`], 
+              AbsoluteThickness[2], FontFamily -> "Source Sans Pro", 
+              RGBColor[0.4, 0.6, 1]]}, 
+           "HighlightLabelingFunctions" -> <|"CoordinatesToolOptions" -> ({
+               (Identity[#]& )[
+                Part[#, 1]], 
+               (Identity[#]& )[
+                Part[#, 2]]}& ), 
+             "ScalingFunctions" -> {{Identity, Identity}, {
+               Identity, Identity}}|>, "Primitives" -> {}, "GCFlag" -> 
+           False|>, 
+         "Meta" -> <|
+          "DefaultHighlight" -> {"Dynamic", None}, "Index" -> {}, "Function" -> 
+           ListPlot, "GroupHighlight" -> False|>|>],
+       ImageSizeCache->{{4.503599627370496*^15, -4.503599627370496*^15}, {
+        4.503599627370496*^15, -4.503599627370496*^15}}],
+      Selectable->False]},
+    Annotation[{{
+       Annotation[{
+         Directive[
+          PointSize[0.012833333333333334`], 
+          AbsoluteThickness[2], FontFamily -> "Source Sans Pro", 
+          RGBColor[0.4, 0.6, 1]], 
+         GeometricTransformation[
+          Inset[
+           Style[
+            Graphics[{
+              EdgeForm[
+               Directive[
+                Thickness[0.24], 
+                RGBColor[0.4, 0.6, 1]]], 
+              Directive[
+               RGBColor[0.91, 0.94, 1.]], 
+              Disk[{0, 0}]}, ImageSize -> 12, ImagePadding -> Rational[3, 2]],
+             GraphicsBoxOptions -> {DefaultBaseStyle -> Directive[
+                PointSize[0.012833333333333334`], 
+                AbsoluteThickness[2], FontFamily -> "Source Sans Pro", 
+                RGBColor[0.4, 0.6, 1]]}], {0., 0.}], {{{13.54727458056279, 
+          0.8739770410101451}}, {{25.101980037627527`, 
+          1.4924198727211084`}}, {{56.29785477953601, 3.387032581577525}}, {{
+          125.93191533069984`, 5.988303798385267}}, {{145.37033505326923`, 
+          7.370585589129779}}, {{268.0430121021818, 8.706224911017669}}, {{
+          387.8463143188271, 9.548016848719428}}, {{509.1187601790455, 
+          10.159948128307661`}}, {{692.2330497006793, 
+          10.449421585525123`}}, {{855.6920111427044, 
+          10.572818632258016`}}, {{983.3867479237821, 
+          10.657722479221414`}}, {{1145.3687388384485`, 
+          10.803388559643421`}}, {{1326.4347132043533`, 
+          10.907191790675636`}}, {{1480.8663977623826`, 
+          10.985392030561295`}}, {{1640.9826710977595`, 
+          11.076407514124309`}}, {{1794.1639651113223`, 
+          11.121951290642043`}}, {{1958.8435715702471`, 
+          11.175647048342285`}}}]}, "Charting`Private`Tag#1"], 
+       Annotation[{
+         Directive[
+          PointSize[0.012833333333333334`], 
+          AbsoluteThickness[2], FontFamily -> "Source Sans Pro", 
+          GrayLevel[0.62]], 
+         GeometricTransformation[
+          Inset[
+           Style[
+            Graphics[{
+              EdgeForm[
+               Directive[
+                Thickness[0.22], 
+                GrayLevel[0.62]]], 
+              Directive[
+               GrayLevel[0.943]], 
+              Polygon[{{
+                 Rational[1, 2], Rational[-1, 2] 3^Rational[1, 2]}, {1, 0}, {
+                 Rational[1, 2], Rational[1, 2] 3^Rational[1, 2]}, {
+                 Rational[-1, 2], Rational[1, 2] 3^Rational[1, 2]}, {-1, 0}, {
+                
+                 Rational[-1, 2], Rational[-1, 2] 3^Rational[1, 2]}}]}, 
+             ImageSize -> 13, ImagePadding -> Rational[13, 8]], 
+            GraphicsBoxOptions -> {DefaultBaseStyle -> Directive[
+                PointSize[0.012833333333333334`], 
+                AbsoluteThickness[2], FontFamily -> "Source Sans Pro", 
+                GrayLevel[0.62]]}], {0., 0.}], {{{10.365589763098287`, 
+          0.13137051416677367`}}, {{28.037445826323808`, 
+          0.4150910104421211}}, {{45.036959805425596`, 
+          0.6378219584476809}}, {{65.58494031568334, 0.9223255157300303}}, {{
+          73.94788652056423, 0.9675811849306396}}, {{116.4094709536898, 
+          1.676717227956456}}, {{151.21833666789993`, 
+          2.4539342043073855`}}, {{204.38388046921793`, 
+          2.756167606335505}}, {{262.39312886032224`, 
+          3.0262994796439155`}}, {{358.9189032045133, 
+          3.4927219400933582`}}, {{525.856427649417, 3.781995228243536}}, {{
+          684.3926547192336, 2.9531778823811754`}}, {{838.4632411686417, 
+          3.1307685267015897`}}, {{1011.5533355224494`, 
+          3.6950480723235435`}}, {{1167.7617210184353`, 
+          3.0810493846387073`}}}]}, "Charting`Private`Tag#2"]}}, <|
+     "HighlightElements" -> <|
+       "Label" -> {"XYLabel"}, "Ball" -> {"IndicatedBall"}|>, 
+      "LayoutOptions" -> <|
+       "PanelPlotLayout" -> <||>, 
+        "PlotRange" -> {{0., 1600.}, {0., 11.24100302772288}}, 
+        "Frame" -> {{True, True}, {True, True}}, "AxesOrigin" -> {0, 0}, 
+        "ImageSize" -> {350, 280.}, "Axes" -> {False, False}, "LabelStyle" -> {
+          Directive[{
+            GrayLevel[0], 24, FontFamily -> "Source Sans Pro"}], 
+          Directive[{
+            GrayLevel[0], 24, FontFamily -> "Source Sans Pro"}], 
+          Directive[{
+            GrayLevel[0], 24, FontFamily -> "Source Sans Pro"}]}, 
+        "AspectRatio" -> 0.8, "DefaultStyle" -> {
+          Directive[
+           PointSize[0.012833333333333334`], 
+           AbsoluteThickness[2], FontFamily -> "Source Sans Pro", 
+           GrayLevel[0.62]], 
+          Directive[
+           PointSize[0.012833333333333334`], 
+           AbsoluteThickness[2], FontFamily -> "Source Sans Pro", 
+           RGBColor[0.4, 0.6, 1]]}, 
+        "HighlightLabelingFunctions" -> <|"CoordinatesToolOptions" -> ({
+            (Identity[#]& )[
+             Part[#, 1]], 
+            (Identity[#]& )[
+             Part[#, 2]]}& ), 
+          "ScalingFunctions" -> {{Identity, Identity}, {
+            Identity, Identity}}|>, "Primitives" -> {}, "GCFlag" -> False|>, 
+      "Meta" -> <|
+       "DefaultHighlight" -> {"Dynamic", None}, "Index" -> {}, "Function" -> 
+        ListPlot, "GroupHighlight" -> False|>|>, 
+     "DynamicHighlight"]], {{}, {}}},
+  AspectRatio->0.8,
+  Axes->{False, False},
+  AxesLabel->{None, None},
+  AxesOrigin->{0, 0},
+  BaseStyle->Directive[{
+     GrayLevel[0], 24, FontFamily -> "Source Sans Pro"}],
+  DefaultBaseStyle->{"PlotGraphics", "Graphics"},
+  DisplayFunction->Identity,
+  Frame->{{True, True}, {True, True}},
+  FrameLabel->{{
+     FormBox[
+      TagBox[
+      "\"(m/\[HBar]) \
+d\[ScriptL]\.b2/\\!\\(\\*StyleBox[\\(d\\*StyleBox[\\\"t\\\",FontSlant->\\\"\
+Italic\\\"]\\)]\\)\"", HoldForm], TraditionalForm], None}, {
+     FormBox[
+      TagBox[
+      "\"(\[ScriptL]/\[Xi]\\!\\(\\*SuperscriptBox[\\()\\), \\(2\\)]\\)\"", 
+       HoldForm], TraditionalForm], None}},
+  FrameStyle->Directive[{
+     GrayLevel[0], 
+     AbsoluteThickness[2], FontSize -> 24}],
+  FrameTicks->{{Automatic, Automatic}, {Automatic, Automatic}},
+  FrameTicksStyle->Directive[{
+     GrayLevel[0], FontFamily -> "Source Sans Pro", FontSize -> 24}],
+  GridLines->{None, None},
+  GridLinesStyle->Directive[
+    GrayLevel[0.5, 0.4]],
+  ImageSize->(Automatic -> 350),
+  LabelStyle->Directive[{
+     GrayLevel[0], 24, FontFamily -> "Source Sans Pro"}],
+  Method->{
+   "AxisPadding" -> Scaled[0.02], "DefaultBoundaryStyle" -> Automatic, 
+    "DefaultGraphicsInteraction" -> {
+     "Version" -> 1.2, "TrackMousePosition" -> {True, False}, 
+      "Effects" -> {
+       "Highlight" -> {"ratio" -> 2}, "HighlightPoint" -> {"ratio" -> 2}, 
+        "Droplines" -> {
+         "freeformCursorMode" -> True, 
+          "placement" -> {"x" -> "All", "y" -> "None"}}}}, "DefaultMeshStyle" -> 
+    AbsolutePointSize[6], "DefaultPlotStyle" -> {
+      Directive[
+       RGBColor[0.24, 0.6, 0.8], 
+       AbsoluteThickness[2]], 
+      Directive[
+       RGBColor[0.95, 0.627, 0.1425], 
+       AbsoluteThickness[2]], 
+      Directive[
+       RGBColor[0.455, 0.7, 0.21], 
+       AbsoluteThickness[2]], 
+      Directive[
+       RGBColor[0.922526, 0.385626, 0.209179], 
+       AbsoluteThickness[2]], 
+      Directive[
+       RGBColor[0.578, 0.51, 0.85], 
+       AbsoluteThickness[2]], 
+      Directive[
+       RGBColor[0.772079, 0.431554, 0.102387], 
+       AbsoluteThickness[2]], 
+      Directive[
+       RGBColor[0., 0.6, 0.6], 
+       AbsoluteThickness[2]], 
+      Directive[
+       RGBColor[0.9, 0.36, 0.684], 
+       AbsoluteThickness[2]], 
+      Directive[
+       RGBColor[0.56, 0.7, 0.], 
+       AbsoluteThickness[2]], 
+      Directive[
+       RGBColor[0.9, 0.54, 0.], 
+       AbsoluteThickness[2]], 
+      Directive[
+       RGBColor[0.585, 0.5976, 0.9], 
+       AbsoluteThickness[2]], 
+      Directive[
+       RGBColor[0.9, 0.45, 0.45], 
+       AbsoluteThickness[2]], 
+      Directive[
+       RGBColor[0.7632186717367254, 0.8174402144034898, 0.], 
+       AbsoluteThickness[2]], 
+      Directive[
+       RGBColor[0.8554632469481959, 0.24885384718327969`, 0.8334053873948551], 
+       AbsoluteThickness[2]], 
+      Directive[
+       RGBColor[0.032972823413648836`, 0.7396719749139476, 0.534700104525218], 
+       AbsoluteThickness[2]]}, "DomainPadding" -> Scaled[0.02], 
+    "PointSizeFunction" -> "SmallPointSize", "RangePadding" -> Scaled[0.05], 
+    "OptimizePlotMarkers" -> True, "IncludeHighlighting" -> Automatic, 
+    "HighlightStyle" -> Automatic, "OptimizePlotMarkers" -> True, 
+    "IncludeHighlighting" -> "CurrentPoint", "HighlightStyle" -> Automatic, 
+    "OptimizePlotMarkers" -> True, 
+    "CoordinatesToolOptions" -> {"DisplayFunction" -> ({
+        (Identity[#]& )[
+         Part[#, 1]], 
+        (Identity[#]& )[
+         Part[#, 2]]}& ), "CopiedValueFunction" -> ({
+        (Identity[#]& )[
+         Part[#, 1]], 
+        (Identity[#]& )[
+         Part[#, 2]]}& )}},
+  PlotInteractivity:>True,
+  PlotRange->{{0., 1600.}, {0., 11.24100302772288}},
+  PlotRangeClipping->True,
+  PlotRangePadding->{{None, None}, {None, 
+     Scaled[0.05]}},
+  Prolog->{
+    LineBox[
+     NCache[{{0, 0}, {2100, 
+        Rational[75, 2]}}, {{0, 0}, {2100, 37.5}}]], 
+    Dashing[{Small, Small}], 
+    LineBox[{{0, 3.4}, {2100, 3.4}}]},
+  Ticks->{Automatic, Automatic}]], "Output",
+ CellChangeTimes->{{3.999330878190775*^9, 3.9993310914461517`*^9}},
+ CellLabel->"Out[39]=",ExpressionUUID->"9ca6f5b4-1925-43eb-a150-54cdb7b38b8e"]
+}, Open  ]]
+},
+WindowSize->{808, 747},
+WindowMargins->{{4, Automatic}, {Automatic, 4}},
+FrontEndVersion->"15.0 for Mac OS X ARM (64-bit) (July 2, 2026)",
+StyleDefinitions->"Default.nb",
+ExpressionUUID->"9775a478-8463-4c1a-b6f4-c5ae06807419"
+]
+(* End of Notebook Content *)
+
+(* Internal cache information *)
+(*CellTagsOutline
+CellTagsIndex->{}
+*)
+(*CellTagsIndex
+CellTagsIndex->{}
+*)
+(*NotebookFileOutline
+Notebook[{
+Cell[554, 20, 330, 7, 49, "Input",ExpressionUUID->"afd8f090-eab7-46f0-9363-c09bda133276"],
+Cell[887, 29, 1046, 27, 131, "Input",ExpressionUUID->"d7dfd2c2-b723-42e8-bf8c-8252cc06a855"],
+Cell[CellGroupData[{
+Cell[1958, 60, 2131, 59, 192, "Input",ExpressionUUID->"f43ecf49-fb5a-44f9-922c-6909bbf6432f"],
+Cell[4092, 121, 33295, 715, 368, "Output",ExpressionUUID->"9ca6f5b4-1925-43eb-a150-54cdb7b38b8e"]
+}, Open  ]]
+}
+]
+*)
+
+(* End of internal cache information *)
+
