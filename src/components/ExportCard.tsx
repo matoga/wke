@@ -34,12 +34,18 @@ function runHeader(rec: RunRecord): string[] {
   ];
 }
 
-export function ExportCard({ spectrum, atomNumber, selected, compared }: {
+/** File-name suffix of a run's sign of a: "_plus" or "_minus". */
+const signSuffix = (rec: RunRecord) => (rec.result.scales.sign > 0 ? '_plus' : '_minus');
+
+export function ExportCard({ spectrum, atomNumber, shown, compared }: {
   spectrum: PreparedSpectrum;
   atomNumber: number | null;
-  selected: RunRecord | null;
+  /** the runs shown: one, or both signs of a ±a pair */
+  shown: RunRecord[];
   compared: RunRecord[];
 }) {
+  const pair = shown.length > 1;
+  const fileBase = (rec: RunRecord) => `${slug(runLabel(rec.result))}${pair ? signSuffix(rec) : ''}`;
   const [convention, setConvention] = useState<ExportConvention>('Nk_over_N');
   const [kUnit, setKUnit] = useState<ExportKUnit>('um_inv');
   const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
@@ -50,27 +56,29 @@ export function ExportCard({ spectrum, atomNumber, selected, compared }: {
   };
 
   const exportFinal = () => {
-    if (!selected) return;
-    const last = selected.result.snapshots.at(-1)!;
-    const out = exportProfile(selected.result.k_um_inv, last.q, { convention, kUnit, atomNumber, fallbackScale: null });
-    download(`${slug(runLabel(selected.result))}-final.csv`,
-      `${header([...runHeader(selected), `state at t = ${last.t_s} s`, out.scaleNote])}\n${out.csv}`);
+    for (const rec of shown) {
+      const last = rec.result.snapshots.at(-1)!;
+      const out = exportProfile(rec.result.k_um_inv, last.q, { convention, kUnit, atomNumber, fallbackScale: null });
+      download(`${fileBase(rec)}-final.csv`,
+        `${header([...runHeader(rec), `state at t = ${last.t_s} s`, out.scaleNote])}\n${out.csv}`);
+    }
   };
 
   const exportTrajectoryCsv = () => {
-    if (!selected) return;
-    const r = selected.result;
-    const out = exportTrajectory(r.k_um_inv, r.snapshots, r.scales.density_um3);
-    download(`${slug(runLabel(r))}-trajectory.csv`, `${header([...runHeader(selected), out.scaleNote])}\n${out.csv}`);
+    for (const rec of shown) {
+      const r = rec.result;
+      const out = exportTrajectory(r.k_um_inv, r.snapshots, r.scales.density_um3);
+      download(`${fileBase(rec)}-trajectory.csv`, `${header([...runHeader(rec), out.scaleNote])}\n${out.csv}`);
+    }
   };
 
   const exportKp = () => {
-    const lines = ['model,accuracy,t_s,k_p_um_inv,k_p_over_k_p0,loop_dressing'];
+    const lines = ['model,sign_a,accuracy,t_s,k_p_um_inv,k_p_over_k_p0,loop_dressing'];
     for (const rec of compared) {
       const r = rec.result;
       const name = runLabel(r).replace(/,/g, ';');
       for (let i = 0; i < r.kpTrack.t_s.length; i++) {
-        lines.push([name, r.accuracy, r.kpTrack.t_s[i], r.kpTrack.kp[i], r.kpTrack.kp[i] / r.kp0_um_inv, r.kpTrack.loop[i]]
+        lines.push([name, r.scales.sign > 0 ? '+' : '-', r.accuracy, r.kpTrack.t_s[i], r.kpTrack.kp[i], r.kpTrack.kp[i] / r.kp0_um_inv, r.kpTrack.loop[i]]
           .map((v) => (typeof v === 'number' ? v.toPrecision(9) : v)).join(','));
       }
     }
@@ -92,8 +100,8 @@ export function ExportCard({ spectrum, atomNumber, selected, compared }: {
       </div>
       <div className="toolbar">
         <button type="button" className="btn" onClick={exportInitial}>Initial spectrum</button>
-        <button type="button" className="btn" onClick={exportFinal} disabled={!selected}>Final state</button>
-        <button type="button" className="btn" onClick={exportTrajectoryCsv} disabled={!selected}>Whole trajectory</button>
+        <button type="button" className="btn" onClick={exportFinal} disabled={shown.length === 0}>Final state{pair ? 's, ±a' : ''}</button>
+        <button type="button" className="btn" onClick={exportTrajectoryCsv} disabled={shown.length === 0}>Whole trajector{pair ? 'ies, ±a' : 'y'}</button>
         <button type="button" className="btn" onClick={exportKp} disabled={compared.length === 0}>kₚ(t), all models</button>
       </div>
       <p className="hint">

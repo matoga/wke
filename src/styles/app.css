@@ -21,16 +21,15 @@ a { color: var(--accent); }
 
 /* ---------------------------------------------------------------- header */
 
-.top { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 24px; }
-.top-text { display: grid; gap: 4px; max-width: 78ch; }
+.top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 24px; }
 h1 {
-  font: italic 600 32px/1.1 var(--serif);
+  font: italic 600 26px/1.1 var(--serif);
   margin: 0;
   letter-spacing: -0.01em;
   text-wrap: balance;
 }
-.lede { color: var(--muted); margin: 0; }
-.lede b { color: var(--ink); font-weight: 500; }
+/* the plain-language subtitle beside the title, on the same line */
+h1 .h1-sub { font: 400 15px/1.1 var(--sans); font-style: normal; color: var(--muted); letter-spacing: 0; margin-left: 10px; white-space: nowrap; }
 
 /* ------------------------------------------------------------------ grids */
 
@@ -98,17 +97,23 @@ h1 {
 .btn.big { padding: 10px 16px; font-size: 14px; }
 .btn.icon { padding: 6px 8px; }
 
-.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; background: var(--chip); }
+/* Toggles are state, not actions: a recessed track with a raised neutral thumb. The solid accent is kept for
+   primary buttons alone. */
+.seg { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: 8px; background: var(--chip); }
 .seg button {
   border: 0;
+  border-radius: 6px;
   background: transparent;
+  color: var(--muted);
   font: 500 12.5px/1 var(--sans);
-  padding: 7px 10px;
+  padding: 6px 10px;
   cursor: pointer;
   white-space: nowrap;
+  transition: background-color 0.15s, color 0.15s, box-shadow 0.15s;
 }
-.seg button + button { border-left: 1px solid var(--line); }
-.seg button[aria-pressed="true"] { background: var(--accent); color: var(--panel); }
+.seg button:hover:not(:disabled):not([aria-pressed="true"]) { color: var(--ink); }
+.seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.seg button[aria-pressed="true"] { background: var(--thumb); color: var(--ink); box-shadow: var(--thumb-shadow); }
 .seg button:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -144,6 +149,30 @@ h1 {
 .model .desc { grid-column: 2 / 4; color: var(--muted); font-size: 12px; line-height: 1.4; }
 
 .inputs { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 10px; }
+/* Setup: a section header with an optional control on the right */
+.subhead { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: -2px; }
+.subhead > .label { color: var(--ink); font-weight: 600; }
+/* units inside an upper-case label keep their own case */
+.label .u { text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--faint); }
+.check.small { font-size: 12px; color: var(--muted); gap: 6px; }
+.check.small input { width: 13px; height: 13px; }
+/* Setup: the gas, compact */
+.gas { display: grid; gap: 10px; }
+.gas-row { display: grid; grid-template-columns: minmax(84px, 0.6fr) minmax(0, 1.4fr); gap: 10px; align-items: start; }
+.gas-row select { height: 100%; min-height: 32px; }
+.gas .field { grid-template-rows: auto 1fr; }
+.gas-row .field > .seg { width: 100%; }
+.gas-row .field > .seg button { flex: 1 1 0; white-space: nowrap; }
+.a-group { display: flex; gap: 8px; align-items: stretch; }
+.a-group input { width: 84px; flex: 0 0 84px; }
+.a-group .seg { flex: 1 1 auto; }
+.a-group .seg button { flex: 1 1 0; white-space: nowrap; }
+.gas-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 10px; }
+@media (max-width: 420px) { .gas-row { grid-template-columns: 1fr; } .a-group { flex-wrap: wrap; } }
+/* a short warning next to a model name */
+.pill { display: inline-block; margin-left: 8px; padding: 1px 7px; border-radius: 999px; font-size: 10.5px; font-weight: 500;
+  letter-spacing: 0.01em; vertical-align: 1px; border: 1px solid currentColor; }
+.pill.warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 10%, transparent); }
 .field > .seg { width: 100%; }
 .field > .seg button { flex: 1 1 0; }
 .accuracy-field > .seg { justify-self: start; max-width: 100%; }
@@ -189,6 +218,18 @@ input[type="range"] { accent-color: var(--accent); width: 100%; }
 .hero-num .pending { color: var(--faint); }
 .hero-num .pm { font: 400 12.5px/1 var(--sans); color: var(--muted); }
 .hero-sub { color: var(--muted); font-size: 13px; }
+/* ±a pair: one column per sign of a, the ratio underneath */
+.pair-hero { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 18px; margin-top: 2px; }
+.pair-col { display: grid; gap: 6px; align-content: start; min-width: 0; }
+.pair-col + .pair-col { border-left: 1px solid var(--line); padding-left: 18px; }
+.pair-head { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; }
+.pair-head .sw { width: 16px; height: 0; border-top: 2.5px solid var(--c); }
+.pair-ratio { border-top: 1px solid var(--line); padding-top: 8px; margin-top: 4px; font-size: 13.5px; color: var(--ink); font-variant-numeric: tabular-nums; }
+@media (max-width: 520px) {
+  .pair-hero { grid-template-columns: 1fr; }
+  .pair-col + .pair-col { border-left: 0; padding-left: 0; border-top: 1px solid var(--line); padding-top: 10px; }
+}
+.pair-col .hint { font-size: 11.5px; line-height: 1.35; }
 .hero-sub b { color: var(--ink); font-weight: 500; }
 
 .kv { display: grid; grid-template-columns: auto 1fr; gap: 3px 14px; margin: 0; font-variant-numeric: tabular-nums; }
@@ -272,14 +313,21 @@ input[type="range"] { accent-color: var(--accent); width: 100%; }
 .legend .sw.dash { border-top-style: dashed; }
 .legend .off { opacity: 0.4; }
 .legend .sel { color: var(--ink); font-weight: 500; }
+/* ±a pair: +a in the model colour, −a in its tint */
+.pair-swatch { display: inline-flex; align-items: center; gap: 2px; margin-left: 6px; color: var(--muted); font-weight: 400; }
+.pair-swatch .sw { margin-left: 6px; margin-right: 3px; }
 
 .timeline { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: center; }
 .timeline .time { font-variant-numeric: tabular-nums; font-size: 13px; min-width: 9ch; text-align: right; }
 .timeline-summary { display: flex; justify-content: space-between; gap: 10px; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 .timeline-track { position: relative; min-width: 0; display: flex; align-items: center; }
 .timeline-track input { width: 100%; margin: 0; }
-.timeline-mark { position: absolute; top: calc(50% + 9px); transform: translateX(-50%); width: 5px; height: 7px; padding: 0; border: 0; border-radius: 2px; background: var(--faint); cursor: pointer; }
-.timeline-mark:hover, .timeline-mark:focus-visible { background: var(--accent); }
+.timeline-mark { position: absolute; top: calc(50% + 9px); transform: translateX(-50%); width: 5px; height: 7px; padding: 0; border: 0; border-radius: 2px; background: var(--c, var(--faint)); cursor: pointer; }
+.timeline-mark:hover, .timeline-mark:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* the stop target of a run: taller */
+.timeline-mark.target { width: 4px; height: 11px; }
+/* ±a pair: −a stops sit above the time axis, +a below */
+.timeline-mark.minus { top: auto; bottom: calc(50% + 9px); }
 .ramp { height: 6px; border-radius: 3px; background: linear-gradient(90deg, hsl(240, 75%, 48%), hsl(180, 75%, 48%), hsl(120, 75%, 48%), hsl(60, 75%, 48%), hsl(0, 75%, 48%)); }
 
 /* ----------------------------------------------------------------- tables */
@@ -365,3 +413,7 @@ input[type="range"]:disabled { opacity: 0.45; cursor: not-allowed; }
 .guide-slider { display: grid; grid-template-columns: auto minmax(120px, 1fr) auto auto; align-items: center; gap: 10px; }
 .guide-slider .guide-value { font-variant-numeric: tabular-nums; min-width: 6ch; }
 @media (max-width: 520px) { .guide-slider { grid-template-columns: auto 1fr; } }
+
+/* in the narrow columns of a ±a pair, long verdicts wrap instead of running into the other column */
+.pair-col .badges { min-width: 0; }
+.pair-col .badge { white-space: normal; max-width: 100%; line-height: 1.3; }

@@ -8,6 +8,9 @@
   --line: #d6dce4;
   --grid: #e8ecf1;
   --chip: #e4e9f0;
+  /* the selected segment of a toggle: a raised neutral surface, so selection never reads as an action */
+  --thumb: #ffffff;
+  --thumb-shadow: 0 1px 2px rgba(16, 24, 40, 0.14), 0 0 0 1px rgba(16, 24, 40, 0.06);
   --accent: #2f55d4;
   --accent-soft: rgba(47, 85, 212, 0.12);
   --loop: #c8701f;
@@ -21,8 +24,15 @@
   --m-one-loop: #2f55d4;
   --m-chain: #c8701f;
   --m-heuristic-a: #8a4fbf;
+  --m-heuristic-b: #1f8a74;
   --m-heuristic-c: #b8456f;
-  --m-heuristic: #1f8a74;
+  /* the attractive run of a ±a pair: the model colour, mixed towards the panel (resolved per theme) */
+  --m-bare-neg: color-mix(in srgb, var(--m-bare) 55%, var(--panel));
+  --m-one-loop-neg: color-mix(in srgb, var(--m-one-loop) 55%, var(--panel));
+  --m-chain-neg: color-mix(in srgb, var(--m-chain) 55%, var(--panel));
+  --m-heuristic-a-neg: color-mix(in srgb, var(--m-heuristic-a) 55%, var(--panel));
+  --m-heuristic-b-neg: color-mix(in srgb, var(--m-heuristic-b) 55%, var(--panel));
+  --m-heuristic-c-neg: color-mix(in srgb, var(--m-heuristic-c) 55%, var(--panel));
 
   --serif: "Fraunces", "Iowan Old Style", Georgia, serif;
   --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -39,6 +49,8 @@
     --line: #273140;
     --grid: #1d2530;
     --chip: #1f2835;
+    --thumb: #334052;
+    --thumb-shadow: 0 1px 2px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.06);
     --accent: #7f9dff;
     --accent-soft: rgba(127, 157, 255, 0.16);
     --loop: #f0a45a;
@@ -50,8 +62,8 @@
     --m-one-loop: #7f9dff;
     --m-chain: #f0a45a;
     --m-heuristic-a: #c39ae8;
+    --m-heuristic-b: #4fc9ad;
     --m-heuristic-c: #e889ad;
-    --m-heuristic: #4fc9ad;
   }
 }
 
@@ -65,6 +77,8 @@
   --line: #273140;
   --grid: #1d2530;
   --chip: #1f2835;
+  --thumb: #334052;
+  --thumb-shadow: 0 1px 2px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.06);
   --accent: #7f9dff;
   --accent-soft: rgba(127, 157, 255, 0.16);
   --loop: #f0a45a;
@@ -76,6 +90,6 @@
   --m-one-loop: #7f9dff;
   --m-chain: #f0a45a;
   --m-heuristic-a: #c39ae8;
+  --m-heuristic-b: #4fc9ad;
   --m-heuristic-c: #e889ad;
-  --m-heuristic: #4fc9ad;
 }

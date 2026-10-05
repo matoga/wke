@@ -3,10 +3,10 @@
  * tree-level rate; they differ in how each collision is dressed by loops.
  */
 
-export type ModelId = 'bare' | 'one-loop' | 'chain' | 'heuristic-a' | 'heuristic-c' | 'heuristic';
+export type ModelId = 'bare' | 'one-loop' | 'chain' | 'heuristic-a' | 'heuristic-b' | 'heuristic-c';
 
 /** Right-hand side integrated for each model. */
-export type SolverModel = 'bare' | 'one-loop' | 'chain' | 'heuristic-a' | 'heuristic-c' | 'heuristic';
+export type SolverModel = 'bare' | 'one-loop' | 'chain' | 'heuristic-a' | 'heuristic-b' | 'heuristic-c';
 
 export interface ModelInfo {
   id: ModelId;
@@ -21,6 +21,10 @@ export interface ModelInfo {
   hasPole: boolean;
   /** true when the Bose +1 kernel may be combined with the model */
   allowsQuantum: boolean;
+  /** an ansatz rather than a controlled approximation; hidden unless asked for */
+  heuristic: boolean;
+  /** a short warning shown as a pill next to the name */
+  pill?: { text: string; title: string };
 }
 
 export const MODELS: ModelInfo[] = [
@@ -33,6 +37,7 @@ export const MODELS: ModelInfo[] = [
     solver: 'bare',
     hasPole: false,
     allowsQuantum: true,
+    heuristic: false,
   },
   {
     id: 'one-loop',
@@ -43,6 +48,7 @@ export const MODELS: ModelInfo[] = [
     solver: 'one-loop',
     hasPole: false,
     allowsQuantum: false,
+    heuristic: false,
   },
   {
     id: 'chain',
@@ -53,6 +59,7 @@ export const MODELS: ModelInfo[] = [
     solver: 'chain',
     hasPole: true,
     allowsQuantum: true,
+    heuristic: false,
   },
   {
     id: 'heuristic-a',
@@ -63,6 +70,19 @@ export const MODELS: ModelInfo[] = [
     solver: 'heuristic-a',
     hasPole: true,
     allowsQuantum: true,
+    heuristic: true,
+  },
+  {
+    id: 'heuristic-b',
+    label: 'Heuristic B, N = 1',
+    short: 'Heuristic B',
+    bracket: 'M = \\left\\langle \\dfrac{1}{|1 - \\mathrm{Re}\\,L_+ - 4L_-|^2} \\right\\rangle_{s,t}',
+    blurb: 'One denominator for both channels, Z = Re L₊ + 4L₋. Matches the full one-loop term at first order; higher orders are a guess.',
+    solver: 'heuristic-b',
+    hasPole: true,
+    allowsQuantum: false,
+    heuristic: true,
+    pill: { text: 'very slow', title: 'Its dressing is averaged over both channels jointly, which costs one to two orders of magnitude more per step than the bubble chain.' },
   },
   {
     id: 'heuristic-c',
@@ -73,16 +93,7 @@ export const MODELS: ModelInfo[] = [
     solver: 'heuristic-c',
     hasPole: true,
     allowsQuantum: true,
-  },
-  {
-    id: 'heuristic',
-    label: 'Heuristic B, N = 1',
-    short: 'Heuristic B',
-    bracket: 'M = \\left\\langle \\dfrac{1}{|1 - \\mathrm{Re}\\,L_+ - 4L_-|^2} \\right\\rangle_{s,t}',
-    blurb: 'One denominator for both channels, Z = Re L₊ + 4L₋. Matches the full one-loop term at first order; higher orders are a guess.',
-    solver: 'heuristic',
-    hasPole: true,
-    allowsQuantum: false,
+    heuristic: true,
   },
 ];
 

@@ -1,4 +1,4 @@
-# Bose Gas Kinetics
+# Bose Gas · Kinetic Equation Solver
 
 A browser solver for the isotropic wave kinetic equation of a three-dimensional Bose gas. Give it a momentum
 spectrum, a density and a scattering length, and it integrates the four-wave kinetic equation forward in time,
@@ -15,7 +15,8 @@ npm install
 npm run dev        # development server
 npm run build      # typecheck, then a static bundle in dist/
 npm run preview    # serve the bundle
-npm test           # physics, loop models, UI smoke test, provenance audit
+npm test           # fast checks (about 15 s): physics, UI smoke test, provenance audit
+npm run test:full  # adds the slow numerics: ±a pairs and the loop models (about 15 min)
 npm run bench      # manual convergence benchmark (slow)
 ```
 
@@ -42,8 +43,8 @@ gives both in full.
 | One loop, N = 1 | 1 + 2⟨Re L₊⟩ + 8⟨Re L₋⟩ | Exact next order for a one-component gas. Odd in a. |
 | Bubble chain, N → ∞ | ⟨\|1 − L₋\|⁻²⟩ | Large-N exchange chain on the one-component tree level. |
 | Heuristic A, N = 1 | ⟨\|1 − 4L₋\|⁻²⟩ₜ | Exchange chain with the one-component rung weight. Omits L₊ and crossed diagrams; its pole location is not derived. |
+| Heuristic B, N = 1 | ⟨\|1 − Re L₊ − 4L₋\|⁻²⟩ₛ,ₜ | One denominator for both channels, averaged over their joint configurations; first order is exactly the one-loop bracket, higher orders are heuristic. Im L₊ is left out, since its interference with Im L₋ depends on a causal prescription the ansatz does not fix. Omits crossed diagrams. |
 | Heuristic C, fitted | ⟨\|1 − 1.85 L₋\|⁻²⟩ₜ | Bubble chain with the rung weight fitted so the late (m/ħ) dℓ²/dt matches the measured ≈ 3.4 (Bose +1). Fitted, not derived. |
-| Heuristic B, N = 1 | ⟨\|1 − Re L₊ − 4L₋\|⁻²⟩ₛ,ₜ | One denominator for both channels; first order is exactly the one-loop bracket, higher orders are heuristic. Omits crossed diagrams. |
 
 ⟨·⟩ is the average over the angular configurations of each collision: for fixed magnitudes the transferred
 momentum is uniformly distributed over an interval of length 2·min(p₁, p₂, p₃, p₄), and the whole dressing is
@@ -55,14 +56,21 @@ f₁f₂(1 + f + f₃) − f f₃(1 + f₁ + f₂), and the dressing is unchange
 (its factor is f_{k+Q} − f_k). The one-loop model and heuristic B, which also contain the pair bubble L₊, use
 classical wave statistics. A one-loop run
 stops when its bracket turns negative on more than 0.1% of the collision weight, and a resummed run stops when
-any of its weights 1/|1 − cL|² reaches 10.
+collisions whose averaged dressing M exceeds 10 carry more than 1% of the collision rate. The largest sampled
+weight 1/|1 − cL|² is reported as a diagnostic only, since near a pole it depends on where the table nodes fall.
 
 ## Using the app
 
 - **Initial state**: pick a preset, paste or upload two columns (k in μm⁻¹, then either the isotropic density n(k)
   with N = 4π∫k²n(k)dk, or the shell distribution Nₖ/N), or draw Nₖ(k) by hand. The convention is never guessed.
-- **Setup**: the model, the accuracy level, the stop target kₚ/kₚ,₀, and the gas: species, scattering length a (a₀),
-  and either N with a box volume V (μm³), N with a cylinder (L, R/L), or the density n (μm⁻³) directly.
+- **Setup**: the model, the accuracy level, the stop target kₚ/kₚ,₀, and the gas: species, scattering length |a| (a₀)
+  with its sign (repulsive, attractive, or both), and either N with a box volume V (μm³), N with a cylinder (L, R/L),
+  or the density n (μm⁻³) directly.
+- **±a pair**: with the sign set to *Both ±a*, every run starts at +|a| and −|a| together from the same initial state,
+  grid and settings. The two integrate concurrently on the same threads and share every table (all solver scales
+  depend on |a| only; the sign enters only the loops). The result shows both stop times and their ratio t₋/t₊, the
+  comparison table pairs the signs, and the spectrum overlays both at one time with their difference underneath.
+  −a runs are drawn in a lighter tint of the model colour. The bare equation is even in a, so its pair runs once.
 - **Result**: the time for the peak kₚ to fall to the target, with verdicts on loop strength, run outcome and
   conservation. **Run all models** runs every model on the same setup for comparison.
 - **Evolving spectrum**: replay of the saved states, animated or overlaid; **Continue** integrates further from the

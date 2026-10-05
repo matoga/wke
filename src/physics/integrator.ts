@@ -53,8 +53,11 @@ export interface IntegrationResult {
   tauTarget: number | null;
   dtTarget_s: number | null;
   snapshots: Snapshot[];
-  /** per accepted step; `loop` is the collision-weighted loop dressing, `pole` the pole indicator */
-  kpTrack: { tau: number[]; t_s: number[]; kp: number[]; loop: number[]; pole: number[] };
+  /**
+   * per accepted step; `loop` is the collision-weighted loop dressing, `pole` the pole indicator,
+   * `share` the rate share of collisions at the pole (NaN unless resummed)
+   */
+  kpTrack: { tau: number[]; t_s: number[]; kp: number[]; loop: number[]; pole: number[]; share: number[] };
   /** k_p at the requested `tauEval` times, from the dense output */
   evalTrack: { tau: number[]; t_s: number[]; kp: number[] };
   nSteps: number;
@@ -128,6 +131,19 @@ export interface IntegrationConfig {
   peakDepth?: number;
   /** minimum wall time between progress callbacks (ms) */
   progressInterval_ms?: number;
+  /**
+   * Runs of a ±a pair end together. The target crossing is located and
+   * reported as usual, but the run keeps evolving past it. `bound()` says how
+   * far it may go: while its partner is still running, up to the partner's
+   * current τ (the run waits there); once every run of the pair has reached
+   * its target or ended, to the common end (`final`). The runs share t₀, so
+   * their τ are comparable.
+   */
+  hold?: {
+    onTarget: (tau: number) => void;
+    onStep: (tau: number) => void;
+    bound: () => { tau: number; final: boolean };
+  };
 }
 
 /** Lattice unit of absolute dimensionless time; strides are powers of two times this. */
@@ -193,7 +209,7 @@ export async function runWKE(config: IntegrationConfig): Promise<IntegrationResu
   const {
     rhs: rhsFn, grid: p, gridWeights: wq, t0_s, xi_um, kp0_um_inv, f0, tauMax,
     rtol = 1e-7, atol = 1e-10, nSnapshots = 40, snapshotIntervalTau,
-    maxSteps = 200000, tauEval, onEval, onProgress, onLive, shouldStop, progressInterval_ms = 150,
+    maxSteps = 200000, tauEval, onEval, onProgress, onLive, shouldStop, progressInterval_ms = 150, hold,
     lattice = { offsetTau: 0, stride: 1 }, stopAtBreakdown = true,
     haltOnHalf = true, stopKpFraction = 0.5, peakDepth = PEAK_DEPTH,
   } = config;
@@ -237,6 +253,7 @@ export async function runWKE(config: IntegrationConfig): Promise<IntegrationResu
   const snapshots: Snapshot[] = [];
   const kpTrack = {
     tau: [] as number[], t_s: [] as number[], kp: [] as number[], loop: [] as number[], pole: [] as number[],
+    share: [] as number[],
   };
   const evalTrack = { tau: [] as number[], t_s: [] as number[], kp: [] as number[] };
   let evalIdx = 0;
@@ -284,7 +301,7 @@ export async function runWKE(config: IntegrationConfig): Promise<IntegrationResu
   first.mHist = diag.mHist;
   onLive?.(first, stride);
   kpTrack.tau.push(0); kpTrack.t_s.push(0); kpTrack.kp.push(kpOf(y));
-  kpTrack.loop.push(diag.loopDressing); kpTrack.pole.push(diag.poleIndicator);
+  kpTrack.loop.push(diag.loopDressing); kpTrack.pole.push(diag.poleIndicator); kpTrack.share.push(diag.poleShare);
   let termination: Termination | null = null;
   let terminationMessage: string | null = null;
   let breakdown: { tau: number; message: string } | null = null;
@@ -320,9 +337,22 @@ export async function runWKE(config: IntegrationConfig): Promise<IntegrationResu
   // the live view, hold the same frames.
   void nSnapshots; void snapshotIntervalTau;
 
-  while (termination === null && tau < tauMax && nSteps < maxSteps && !(haltOnHalf && reachedHalf)) {
+  // A held run goes on past its target until the pair's common end. Its crossing step, taken before the
+  // end is known, may pass that end; the last step is kept so the end state can be read off its dense output.
+  const last = hold ? { y0: new Float64Array(n), k0: new Float64Array(n), tau0: 0 } : null;
+  const reachedEnd = (b: { tau: number; final: boolean }) => b.final && tau >= b.tau * (1 - 1e-12);
+  const done = () => haltOnHalf && reachedHalf && (!hold || reachedEnd(hold.bound()));
+  while (termination === null && tau < tauMax && nSteps < maxSteps && !done()) {
     if (shouldStop?.()) { termination = 'stopped'; break; }
     if (tau + h > tauMax) h = tauMax - tau;
+    if (hold && reachedHalf) {
+      const b = hold.bound();
+      if (tau + h > b.tau) {
+        // before the common end is known, never pass the partner: wait until it is a full step ahead
+        if (!b.final) { await new Promise<void>((resolve) => setTimeout(resolve, 2)); continue; }
+        h = b.tau - tau;
+      }
+    }
     if (consecutiveRejects > 60 || !(h > 0)) {
       termination = 'nonfinite';
       terminationMessage = 'Step size collapsed; the kinetic equation became too stiff to continue.';
@@ -378,6 +408,7 @@ export async function runWKE(config: IntegrationConfig): Promise<IntegrationResu
       // here, before the loop advances past it below.
       halfStateF = hermite(y, yTmp, k1, k7, tau, h, tauHalf, n);
       reachedHalf = true;
+      hold?.onTarget(tauHalf);
     }
 
     // --- stage crossings, located the same way ---
@@ -409,7 +440,7 @@ export async function runWKE(config: IntegrationConfig): Promise<IntegrationResu
     // --- lattice samples, evaluated on dense output ---
     // If this step contains the terminal event, stop at it: the final state
     // below is the exact event state.
-    const sampleEnd = reachedHalf && tauHalf !== null ? tauHalf : tauNew;
+    const sampleEnd = reachedHalf && tauHalf !== null && !hold ? tauHalf : tauNew;
     {
       const absEnd = offsetTau + sampleEnd;
       let dt = stride * LATTICE_UNIT;
@@ -433,18 +464,24 @@ export async function runWKE(config: IntegrationConfig): Promise<IntegrationResu
       }
     }
 
+    if (last) {
+      // the step just taken, for the exact state at the pair's end should it lie inside it
+      last.y0.set(y); last.k0.set(k1); last.tau0 = tau;
+    }
     tau = tauNew;
     y.set(yTmp);
     k1.set(k7); // FSAL
     kpPrev = kpNew;
     nSteps++;
     diag = diagNew;
+    hold?.onStep(tau);
 
     kpTrack.tau.push(tau);
     kpTrack.t_s.push(tau * t0_s);
     kpTrack.kp.push(kpNew);
     kpTrack.loop.push(diag.loopDressing);
     kpTrack.pole.push(diag.poleIndicator);
+    kpTrack.share.push(diag.poleShare);
 
     if (diag.stop && !reachedHalf) {
       if (!breakdown) breakdown = { tau, message: diag.stop };
@@ -468,17 +505,31 @@ export async function runWKE(config: IntegrationConfig): Promise<IntegrationResu
       }
     }
 
-    if (!reachedHalf) {
+    if (!reachedHalf || hold) {
       h = Math.min(hMax, h * Math.min(5, 0.9 * Math.pow(Math.max(err, 1e-10), -0.2)));
     }
   }
 
   let finalF: Float64Array = y;
   let finalTau = tau;
-  if (haltOnHalf && reachedHalf && tauHalf !== null && halfStateF !== null) {
+  // A held run that passed the pair's common end in its last step ends exactly there.
+  const pairEnd = hold && last && reachedHalf && termination === null ? hold.bound() : null;
+  const cutAt = pairEnd && pairEnd.final && tau > pairEnd.tau * (1 + 1e-12) && pairEnd.tau >= last!.tau0 ? pairEnd.tau : null;
+  if (haltOnHalf && reachedHalf && tauHalf !== null && halfStateF !== null && !hold) {
     finalF = halfStateF;
     finalTau = tauHalf;
     snapshots.push(makeSnapshot(tauHalf, finalF, 'final'));
+  } else if (cutAt !== null) {
+    finalF = hermite(last!.y0, y, last!.k0, k1, last!.tau0, tau - last!.tau0, cutAt, n);
+    finalTau = cutAt;
+    // samples and track points of the step beyond the end
+    for (let i = snapshots.length - 1; i >= 0; i--) if (snapshots[i].tau > cutAt * (1 + 1e-12)) snapshots.splice(i, 1);
+    while (kpTrack.tau.length > 1 && kpTrack.tau[kpTrack.tau.length - 1] > cutAt * (1 + 1e-12)) {
+      for (const a of [kpTrack.tau, kpTrack.t_s, kpTrack.kp, kpTrack.loop, kpTrack.pole, kpTrack.share]) a.pop();
+    }
+    kpTrack.tau.push(cutAt); kpTrack.t_s.push(cutAt * t0_s); kpTrack.kp.push(kpOf(finalF));
+    kpTrack.loop.push(diag.loopDressing); kpTrack.pole.push(diag.poleIndicator); kpTrack.share.push(diag.poleShare);
+    snapshots.push(makeSnapshot(cutAt, finalF, 'final'));
   } else {
     snapshots.push(makeSnapshot(tau, y, 'final'));
   }

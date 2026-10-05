@@ -1,6 +1,8 @@
 /**
  * The evolving shell spectrum N_k(k, t) of the selected run. Playback replays
- * the saved states by simulated time; nothing is re-integrated.
+ * the saved states by simulated time; nothing is re-integrated. For a ±a pair
+ * both runs are drawn at the same time on one playhead, with their difference
+ * in a strip underneath.
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -10,7 +12,7 @@ import type { Marker, Series } from './Plot';
 import { applyNorm } from '../ui/norm';
 import type { NormSpec } from '../ui/norm';
 import { fmt, time, timeText } from '../ui/format';
-import { displayFrames, modelColor, nearestSnapshot, occupation, rampColor, runLabel } from '../ui/runView';
+import { displayFrames, modelColor, nearestSnapshot, occupation, rampColor } from '../ui/runView';
 import { load, save } from '../state/storage';
 import { MODEL_BY_ID } from '../physics/models';
 import type { NormMode } from '../ui/norm';
@@ -29,12 +31,15 @@ const CURVE_COUNTS = [20, 40, 60, 120] as const;
 const isCurveCount = (v: unknown): v is number => typeof v === 'number' && (CURVE_COUNTS as readonly number[]).includes(v);
 
 export function SpectrumCard({
-  record, live, stale, spectrum, desc, stopKpFraction, onStopKpFractionChange, norm, density: inputDensity, normMode, onNormMode, running, canContinue, onContinue, onFrame,
+  record, live, partner, stale, spectrum, desc, stopKpFraction, onStopKpFractionChange, norm, density: inputDensity, normMode, onNormMode, running, canContinue, onContinue, onFrame,
 }: {
   /** the state on screen, for readouts elsewhere */
-  onFrame?: (frame: { snap: WKESnapshot; k: Float64Array } | null) => void;
+  onFrame?: (frame: { snap: WKESnapshot; k: Float64Array; partnerSnap?: WKESnapshot | null } | null) => void;
+  /** the run shown: the only one, or the +a run of a ±a pair */
   record: RunRecord | null;
   live: LiveRun | null;
+  /** the −a run of a ±a pair, finished or live; null outside pair mode */
+  partner: { record: RunRecord | null; live: LiveRun | null } | null;
   stale: boolean;
   spectrum: PreparedSpectrum;
   desc: SpectralDescriptors;
@@ -48,9 +53,16 @@ export function SpectrumCard({
   canContinue: boolean;
   onContinue: () => void;
 }) {
-  const r = live ?? record?.result ?? null;
-  const termination = r && 'termination' in r ? r.termination : null;
-  const [view, setView] = useState<TimeView>('both');
+  const pairMode = partner != null;
+  const plusRun = live ?? record?.result ?? null;
+  const minusRun = partner ? partner.live ?? partner.record?.result ?? null : null;
+  // The run that sets the grid, the initial state and the time line: +a if there is one.
+  const r = plusRun ?? minusRun;
+  const termination = [plusRun, minusRun].some((x) => x && 'termination' in x && (x.termination === 'pole' || x.termination === 'nonfinite'))
+    ? 'pole' : r && 'termination' in r ? r.termination : null;
+  const [viewChoice, setView] = useState<TimeView>('both');
+  // The rainbow history of two runs at once would be unreadable: a pair is always animated.
+  const view: TimeView = pairMode ? 'animate' : viewChoice;
   const [quantity, setQuantity] = useState<'shell' | 'occupation' | 'k4'>('shell');
   const [curveCount, setCurveCountState] = useState<number>(() => load('curves', 60, isCurveCount));
   const setCurveCount = (c: number) => { setCurveCountState(c); save('curves', c); };
@@ -61,7 +73,9 @@ export function SpectrumCard({
   const seenEnd = useRef(0);
 
   const snaps = r?.snapshots ?? [];
-  const tEnd = snaps.length ? snaps[snaps.length - 1].t_s : 0;
+  const minusSnaps = pairMode && plusRun ? minusRun?.snapshots ?? [] : [];
+  const endOf = (s: WKESnapshot[]) => (s.length ? s[s.length - 1].t_s : 0);
+  const tEnd = Math.max(endOf(snaps), endOf(minusSnaps));
   const k = useMemo(() => (r ? Float64Array.from(r.k_um_inv) : spectrum.k), [r, spectrum]);
 
   const runId = r?.runId;
@@ -111,17 +125,29 @@ export function SpectrumCard({
     () => displayFrames(snaps, curveCount).map((i) => ({ snap: snaps[i], i })),
     [snaps, curveCount],
   );
-  const stageMarks = useMemo(() => snaps
-    .map((snap, i) => ({ time: snap.t_s, stage: snap.stage, i }))
-    .filter((mark) => mark.stage !== 'sample' && mark.stage !== 'initial' && mark.stage !== 'live')
-    .filter((mark, i, marks) => i === 0 || Math.abs(mark.time - marks[i - 1].time) > Math.max(tEnd, 1) * 1e-10),
-  [snaps, tEnd]);
+  // Stops on the time axis: the stage crossings of each run, coloured by run; in a pair +a below, −a above.
+  const stageMarks = useMemo(() => {
+    const marksOf = (s: WKESnapshot[], who: '' | '+a' | '−a') => s
+      .map((snap, i) => ({ time: snap.t_s, stage: snap.stage, i, who }))
+      .filter((mark) => mark.stage !== 'sample' && mark.stage !== 'initial' && mark.stage !== 'live')
+      .filter((mark, i, marks) => i === 0 || Math.abs(mark.time - marks[i - 1].time) > Math.max(tEnd, 1) * 1e-10);
+    return pairMode && plusRun ? [...marksOf(snaps, '+a'), ...marksOf(minusSnaps, '−a')] : marksOf(snaps, pairMode ? '−a' : '');
+  }, [snaps, minusSnaps, tEnd, pairMode, plusRun]);
+  /** a stage label that is the stop target */
+  const isTarget = (stage: string) => Math.abs(Number(stage) - stopKpFraction) < 1e-9;
 
-  const idx = r ? nearestSnapshot(snaps, running ? tEnd : t) : 0;
+  const tShown = running ? tEnd : t;
+  // A run that ended before the playhead holds its final state.
+  const idx = r ? nearestSnapshot(snaps, Math.min(tShown, endOf(snaps))) : 0;
   const frame = r ? snaps[idx] : null;
-  useEffect(() => { onFrame?.(frame ? { snap: frame, k } : null); }, [frame, k, onFrame]);
+  const minusFrame = minusSnaps.length ? minusSnaps[nearestSnapshot(minusSnaps, Math.min(tShown, endOf(minusSnaps)))] : null;
+  useEffect(() => {
+    onFrame?.(frame ? { snap: frame, k, partnerSnap: minusFrame } : null);
+  }, [frame, minusFrame, k, onFrame]);
   const hist = frame?.mHist && view !== 'rainbow' && r && r.model !== 'bare' ? frame.mHist : null;
-  const color = r ? modelColor(r.model) : 'var(--accent)';
+  // Colour of the shown run: tinted when the pair has only its −a run.
+  const color = r ? modelColor(r.model, pairMode && !plusRun ? -1 : 1) : 'var(--accent)';
+  const minusColor = r ? modelColor(r.model, -1) : 'var(--accent)';
 
   const series: Series[] = [];
   const markers: Marker[] = [];
@@ -133,7 +159,7 @@ export function SpectrumCard({
   };
   const yMax = useMemo(() => {
     let max = 0;
-    for (const snap of r ? snaps : [{ q: q0 }]) {
+    for (const snap of r ? [...snaps, ...minusSnaps] : [{ q: q0 }]) {
       for (let i = 0; i < k.length; i++) {
         const ki = k[i];
         if (ki > (quantity === 'occupation' ? 12 : xMax) || (quantity === 'occupation' && ki < 0.02)) continue;
@@ -145,7 +171,7 @@ export function SpectrumCard({
       }
     }
     return max;
-  }, [r, snaps, q0, k, quantity, norm.scale, density, xMax]);
+  }, [r, snaps, minusSnaps, q0, k, quantity, norm.scale, density, xMax]);
   if (!r) {
     series.push({ id: 'initial', label: 'initial state', x: k, y: toY(q0), color: 'var(--accent)' });
   } else if (view !== 'rainbow') {
@@ -159,7 +185,8 @@ export function SpectrumCard({
       }
     }
     series.push({ id: 'initial', label: 't = 0', x: k, y: toY(snaps[0].q), color: 'var(--faint)', dashed: true, width: 1.4 });
-    series.push({ id: 'now', label: `t = ${timeText(frame!.t_s)}`, x: k, y: toY(frame!.q), color, width: 2.2 });
+    series.push({ id: 'now', label: `${pairMode && plusRun ? '+a, ' : ''}t = ${timeText(frame!.t_s)}`, x: k, y: toY(frame!.q), color, width: 2.2 });
+    if (minusFrame) series.push({ id: 'now-minus', label: `−a, t = ${timeText(minusFrame.t_s)}`, x: k, y: toY(minusFrame.q), color: minusColor, width: 2.2 });
   } else {
     for (const { snap, i } of rainbowFrames) {
       series.push({
@@ -173,7 +200,8 @@ export function SpectrumCard({
   if (r && snaps.length) {
     // The peak of the displayed state: follows the scrubber, or the last state in the rainbow view.
     const kpNow = view === 'rainbow' ? snaps[snaps.length - 1].kp_um_inv : frame!.kp_um_inv;
-    markers.push({ id: 'kp', axis: 'x', value: kpNow, label: 'kₚ(t)', color: 'var(--bad)', dashed: true });
+    markers.push({ id: 'kp', axis: 'x', value: kpNow, label: minusFrame ? 'kₚ(+a)' : 'kₚ(t)', color: 'var(--bad)', dashed: true });
+    if (minusFrame) markers.push({ id: 'kp-minus', axis: 'x', value: minusFrame.kp_um_inv, label: 'kₚ(−a)', color: 'color-mix(in srgb, var(--bad) 55%, var(--panel))', dashed: true });
   }
   const kp0 = (r ? r.kp0_um_inv : desc.kp0_um_inv) || 1;
   if (kp0 > 0) {
@@ -201,7 +229,7 @@ export function SpectrumCard({
   return (
     <Card
       label="Evolving spectrum"
-      title={r ? `${MODEL_BY_ID[r.model].short} model${r.kernel === 'quantum' ? ', Bose +1' : ''}` : 'Initial state'}
+      title={r ? `${MODEL_BY_ID[r.model].short} model${r.kernel === 'quantum' ? ', Bose +1' : ''}${pairMode ? ', ±a' : ''}` : 'Initial state'}
       ariaLabel="Evolving spectrum"
       actions={<div className="toolbar spectrum-actions">
         <Segmented<SpectrumQuantity> ariaLabel="Spectrum quantity" value={quantity === 'shell' ? normMode : quantity}
@@ -216,8 +244,8 @@ export function SpectrumCard({
         {r && <Segmented<TimeView> ariaLabel="Time view" value={view} onChange={(v) => { setView(v); if (v === 'rainbow') setPlaying(false); }}
           options={[
             { id: 'animate', label: 'Animate', title: 'Play the current state' },
-            { id: 'rainbow', label: 'Rainbow', title: 'Overlay saved states, coloured by time' },
-            { id: 'both', label: 'Both', title: 'Play the current state over a faint rainbow history' },
+            { id: 'rainbow', label: 'Rainbow', title: pairMode ? 'Not for a ±a pair: two histories at once are unreadable' : 'Overlay saved states, coloured by time', disabled: pairMode },
+            { id: 'both', label: 'Both', title: pairMode ? 'Not for a ±a pair: two histories at once are unreadable' : 'Play the current state over a faint rainbow history', disabled: pairMode },
           ]} />}
         {r && view !== 'animate' && (
           <select className="curves-select" value={curveCount} onChange={(e) => setCurveCount(Number(e.target.value))}
@@ -251,14 +279,20 @@ export function SpectrumCard({
                   onChange={(e) => { setPlaying(false); setT(Number(e.target.value)); }}
                   aria-label="Simulated time"
                 />
-                {stageMarks.map((mark) => (
-                  <button key={`${mark.i}-${mark.stage}`} type="button" className="timeline-mark"
-                    style={{ left: `${tEnd > 0 ? 100 * mark.time / tEnd : 0}%` }}
-                    title={`${mark.stage}, ${timeText(mark.time)}`}
-                    aria-label={`Jump to ${mark.stage} at ${timeText(mark.time)}`}
-                    disabled={running}
-                    onClick={() => { setPlaying(false); setT(mark.time); }} />
-                ))}
+                {stageMarks.map((mark) => {
+                  const what = isTarget(mark.stage) ? `target kₚ = ${stopKpFraction} kₚ,₀`
+                    : Number.isFinite(Number(mark.stage)) ? `kₚ = ${mark.stage} kₚ,₀` : mark.stage;
+                  const who = mark.who ? `${mark.who}: ` : '';
+                  return (
+                    <button key={`${mark.who}${mark.i}-${mark.stage}`} type="button"
+                      className={`timeline-mark ${mark.who === '−a' && pairMode && plusRun ? 'minus' : ''} ${isTarget(mark.stage) ? 'target' : ''}`}
+                      style={{ left: `${tEnd > 0 ? 100 * mark.time / tEnd : 0}%`, ['--c' as string]: mark.who === '−a' ? minusColor : color }}
+                      title={`${who}${what}, t = ${timeText(mark.time)}`}
+                      aria-label={`Jump to ${who}${what} at ${timeText(mark.time)}`}
+                      disabled={running}
+                      onClick={() => { setPlaying(false); setT(mark.time); }} />
+                  );
+                })}
               </div>
               <span className="time">t = {tNow.value} {tNow.unit}</span>
             </div>
@@ -286,7 +320,12 @@ export function SpectrumCard({
         minHeight={260}
         maxHeight={480}
       />
-      {hist && <DressingHistogram hist={hist} loop={frame!.loop ?? null} color={color} t_s={frame!.t_s} />}
+      {frame && minusFrame && plusRun && (
+        <DifferenceStrip k={k} plus={toY(frame.q)} minus={toY(minusFrame.q)} xDomain={quantity === 'occupation' ? [0.02, 12] : [0, xMax]}
+          xScale={quantity === 'occupation' ? 'log' : 'linear'} color={minusColor} />
+      )}
+      {hist && <DressingHistogram hist={hist} loop={frame!.loop ?? null} color={color} t_s={frame!.t_s}
+        minus={minusFrame?.mHist && plusRun ? { hist: minusFrame.mHist, loop: minusFrame.loop ?? null, color: minusColor } : undefined} />}
       {quantity === 'occupation' && (
         <p className="hint">Mean number of atoms per mode, <span>(2π)³ nₖ/V</span>. Modes below 0.3 atoms are cut off; the classical wave picture needs occupations well above one.</p>
       )}
@@ -296,7 +335,12 @@ export function SpectrumCard({
           <div className="toolbar">
             <div className="legend">
               {view !== 'rainbow' && <LegendItem color="var(--faint)" dashed label="t = 0" />}
-              {view !== 'rainbow' && <LegendItem color={color} label={`t = ${tNow.value} ${tNow.unit}, kₚ = ${fmt(frame!.kp_um_inv, 4)} μm⁻¹`} />}
+              {view !== 'rainbow' && (
+                <LegendItem color={color} label={`${pairMode ? (plusRun ? '+a' : '−a') + ', ' : ''}t = ${tNow.value} ${tNow.unit}, kₚ = ${fmt(frame!.kp_um_inv, 4)} μm⁻¹${pairMode && tShown > endOf(snaps) ? ` (ended at t = ${timeText(endOf(snaps))})` : ''}`} />
+              )}
+              {minusFrame && plusRun && (
+                <LegendItem color={minusColor} label={`−a, kₚ = ${fmt(minusFrame.kp_um_inv, 4)} μm⁻¹${tShown > endOf(minusSnaps) ? ` (ended at t = ${timeText(endOf(minusSnaps))})` : ''}`} />
+              )}
               {view === 'rainbow' && <span className="item">{rainbowFrames.length} saved states, coloured by time</span>}
             </div>
             <span className="spacer" />
@@ -322,37 +366,88 @@ export function SpectrumCard({
   );
 }
 
-/** Rate-weighted distribution of the collision dressing M in the state on screen. */
-function DressingHistogram({ hist, loop, color, t_s }: { hist: number[]; loop: number | null; color: string; t_s: number }) {
-  // At least [−0.1, 2.1]; widened in octave jumps where the distribution has weight.
+/**
+ * The −a spectrum minus the +a spectrum at the time on screen, as a share of the +a peak. Dividing by the peak
+ * rather than point by point keeps the sparse tails from dominating.
+ */
+function DifferenceStrip({ k, plus, minus, xDomain, xScale, color }: {
+  k: Float64Array; plus: ArrayLike<number>; minus: ArrayLike<number>;
+  xDomain: [number, number]; xScale: 'linear' | 'log'; color: string;
+}) {
+  let peak = 0;
+  for (let i = 0; i < k.length; i++) if (k[i] >= xDomain[0] && k[i] <= xDomain[1] && plus[i] > peak) peak = plus[i];
+  const y = Float64Array.from(k, (_, i) => (peak > 0 ? (100 * (minus[i] - plus[i])) / peak : 0));
+  let amp = 0;
+  for (let i = 0; i < k.length; i++) if (k[i] >= xDomain[0] && k[i] <= xDomain[1] && Number.isFinite(y[i])) amp = Math.max(amp, Math.abs(y[i]));
+  const top = amp > 0 ? 1.15 * amp : 1;
+  return (
+    <div className="subpanel diff-strip">
+      <Plot
+        series={[{ id: 'diff', label: '−a minus +a', x: k, y, color, width: 1.8 }]}
+        markers={[{ id: 'zero', axis: 'y', value: 0, color: 'var(--faint)', dashed: false }]}
+        xLabel="k (μm⁻¹)"
+        yLabel="−a minus +a (%)"
+        xScale={xScale}
+        xDomain={xDomain}
+        yDomain={[-top, top]}
+        formatX={(v) => v.toFixed(3)}
+        formatY={(v) => `${v.toFixed(2)}%`}
+        aspect={5}
+        minHeight={96}
+        maxHeight={130}
+      />
+      <p className="hint">The −a spectrum minus the +a spectrum at this time, as a share of the +a peak.</p>
+    </div>
+  );
+}
+
+/** Rate-weighted distribution of the collision dressing M in the state on screen; for a pair, of both runs. */
+function DressingHistogram({ hist, loop, color, t_s, minus }: {
+  hist: number[]; loop: number | null; color: string; t_s: number;
+  minus?: { hist: number[]; loop: number | null; color: string };
+}) {
+  // At least [−0.1, 2.1]; widened in octave jumps where either distribution has weight.
   const LOWS = [-0.1, -1.1, -2.1, -4.1, -8.1, -16.1];
   const HIGHS = [2.1, 4.1, 8.1, 16.1, 32.1];
-  let first = hist.findIndex((v) => v > 1e-4);
-  let last = hist.length - 1 - [...hist].reverse().findIndex((v) => v > 1e-4);
-  if (first < 0) { first = 0; last = hist.length - 1; }
+  const both = minus ? hist.map((v, i) => Math.max(v, minus.hist[i] ?? 0)) : hist;
+  let first = both.findIndex((v) => v > 1e-4);
+  let last = both.length - 1 - [...both].reverse().findIndex((v) => v > 1e-4);
+  if (first < 0) { first = 0; last = both.length - 1; }
   const lo = LOWS.find((v) => v <= M_EDGES[first] + 1e-9) ?? LOWS[LOWS.length - 1];
   const hi = HIGHS.find((v) => v >= M_EDGES[last + 1] - 1e-9) ?? HIGHS[HIGHS.length - 1];
-  const x: number[] = [], y: number[] = [];
-  for (let i = 0; i < hist.length; i++) {
-    const a = M_EDGES[i], b = M_EDGES[i + 1];
-    if (b <= lo + 1e-9 || a >= hi - 1e-9) continue;
-    const density = (100 * hist[i]) / (b - a);
-    x.push(a, b);
-    y.push(density, density);
+  const steps = (h: number[]) => {
+    const x: number[] = [], y: number[] = [];
+    for (let i = 0; i < h.length; i++) {
+      const a = M_EDGES[i], b = M_EDGES[i + 1];
+      if (b <= lo + 1e-9 || a >= hi - 1e-9) continue;
+      const density = (100 * h[i]) / (b - a);
+      x.push(a, b);
+      y.push(density, density);
+    }
+    return { x, y };
+  };
+  const plus = steps(hist);
+  const series: Series[] = [{ id: 'hist', label: minus ? '+a' : 'share of collision rate per unit M', ...plus, color, width: 1.8 }];
+  const yAll = [...plus.y];
+  if (minus) {
+    const m = steps(minus.hist);
+    series.push({ id: 'hist-minus', label: '−a', ...m, color: minus.color, width: 1.8 });
+    yAll.push(...m.y);
   }
   const markers: Marker[] = [{ id: 'bare', axis: 'x', value: 1, label: 'bare', color: 'var(--faint)' }];
-  if (loop != null) markers.push({ id: 'mean', axis: 'x', value: 1 + loop, label: '⟨M⟩', color, dashed: true });
+  if (loop != null) markers.push({ id: 'mean', axis: 'x', value: 1 + loop, label: minus ? '⟨M⟩ +a' : '⟨M⟩', color, dashed: true });
+  if (minus?.loop != null) markers.push({ id: 'mean-minus', axis: 'x', value: 1 + minus.loop, label: '⟨M⟩ −a', color: minus.color, dashed: true });
   const clipped = hist[0] > 1e-4 || hist[hist.length - 1] > 1e-4;
   return (
     <div className="subpanel">
       <div className="label">Collision dressing at t = {timeText(t_s)}</div>
       <Plot
-        series={[{ id: 'hist', label: 'share of collision rate per unit M', x, y, color, width: 1.8 }]}
+        series={series}
         markers={markers}
         xLabel="dressing M"
         yLabel="rate share per unit M (%)"
         xDomain={[lo, hi]}
-        yDomain={[0, 1.1 * Math.max(...y, 1e-6)]}
+        yDomain={[0, 1.1 * Math.max(...yAll, 1e-6)]}
         formatX={(v) => v.toFixed(3)}
         formatY={(v) => `${v.toFixed(1)}%`}
         aspect={3.2}

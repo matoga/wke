@@ -1,7 +1,13 @@
 /**
  * Owns the solver worker, a queue of runs, and the library of finished runs
- * (the latest run of every model, kernel and accuracy). Runs of different
- * models on the same physical setup share a fingerprint and can be compared.
+ * (the latest run of every model, kernel, accuracy and sign of a). Runs on the
+ * same physical setup share a fingerprint, which holds |a|, so the two signs
+ * of a can be compared.
+ *
+ * A job runs one sign, or both signs of a ±a pair: the pair's two runs start
+ * together from the same state and integrate concurrently in the worker. The
+ * bare equation is even in a, so its pair runs once and the result stands for
+ * both signs.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -10,14 +16,18 @@ import type { ModelId } from '../physics/models';
 import { MODEL_BY_ID } from '../physics/models';
 import type { AccuracyLevel } from '../physics/precision';
 import { PRECISION, nextLevel } from '../physics/precision';
-import { runKeyOf } from '../types/wke';
-import type { WKEContinueRequest, WKELive, WKEResponse, WKEResult, WKERunRequest, WKESnapshot } from '../types/wke';
+import { partnerKeyOf, runKeyOf, signOfKey } from '../types/wke';
+import type { Sign, WKEContinueRequest, WKELive, WKEResponse, WKEResult, WKERunRequest, WKESnapshot } from '../types/wke';
 
 export interface RunSetup {
+  /** identity of the physical setup; holds |a|, so both signs of a share it */
   fingerprint: string;
   q: number[];
   density_um3: number;
-  a_a0: number;
+  /** |a| (a₀) */
+  aAbs_a0: number;
+  /** the signs a run covers: one, or both for a ±a pair */
+  signs: Sign[];
   speciesKey: string;
   stopKpFraction: number;
 }
@@ -35,6 +45,8 @@ export interface RunRecord {
   result: WKEResult;
   fingerprint: string;
   check?: ConvergenceCheck | 'pending';
+  /** the bare equation's result at the other sign, which it equals (the equation is even in a) */
+  mirrored?: boolean;
 }
 
 export interface LiveRun {
@@ -43,6 +55,7 @@ export interface LiveRun {
   runKey: string;
   model: WKELive['model'];
   kernel: WKELive['kernel'];
+  sign: Sign;
   k_um_inv: number[];
   kp0_um_inv: number;
   stopKpFraction: number;
@@ -58,10 +71,28 @@ export interface RunJob {
   stopAtBreakdown: boolean;
 }
 
+type SignKey = '+' | '-';
+const sk = (s: Sign): SignKey => (s > 0 ? '+' : '-');
+
 interface QueuedJob extends RunJob {
   purpose: 'main' | 'check';
-  mainKey?: string;
-  tEval_s?: number[];
+  signs: Sign[];
+  /** convergence checks: the run each sign checks, and the times to compare at */
+  mainKeys?: Partial<Record<SignKey, string>>;
+  tEval?: Partial<Record<SignKey, number[]>>;
+}
+
+/** Progress of one run of the current job. */
+export interface SignProgress {
+  phase: 'setup' | 'integrating' | 'continuing';
+  pct: number;
+  t_s?: number;
+  kp?: number;
+  loopDressing?: number;
+  poleIndicator?: number;
+  poleShare?: number;
+  elapsed_ms?: number;
+  done?: boolean;
 }
 
 export interface RunProgress {
@@ -69,19 +100,23 @@ export interface RunProgress {
   stopping?: boolean;
   label: string;
   phase: 'setup' | 'integrating' | 'continuing' | '';
+  /** the least advanced run of the job */
   pct: number;
   t_s?: number;
   kp?: number;
   loopDressing?: number;
   poleIndicator?: number;
+  poleShare?: number;
   elapsed_ms?: number;
   queued: number;
   error?: string;
   /** a convergence check reruns the shown run and leaves its result valid */
   purpose?: 'main' | 'check';
+  /** every run of the job, by sign of a; two entries for a pair */
+  perSign: Partial<Record<SignKey, SignProgress>>;
 }
 
-const IDLE: RunProgress = { running: false, label: '', phase: '', pct: 0, queued: 0 };
+const IDLE: RunProgress = { running: false, label: '', phase: '', pct: 0, queued: 0, perSign: {} };
 
 const NSNAPSHOTS = 50;
 const TAU_MAX = 1e6;
@@ -117,6 +152,7 @@ function mergeContinuation(prior: WKEResult, seg: WKEResult): WKEResult {
       kp: [...prior.kpTrack.kp, ...seg.kpTrack.kp.slice(1)],
       loop: [...prior.kpTrack.loop, ...seg.kpTrack.loop.slice(1)],
       pole: [...prior.kpTrack.pole, ...seg.kpTrack.pole.slice(1)],
+      share: prior.kpTrack.share && seg.kpTrack.share ? [...prior.kpTrack.share, ...seg.kpTrack.share.slice(1)] : undefined,
     },
     nSteps: prior.nSteps + seg.nSteps,
     nRhs: prior.nRhs + seg.nRhs,
@@ -151,12 +187,39 @@ function sampleTimes(result: WKEResult, max = 60): number[] {
   return Array.from(new Set(out));
 }
 
+/** The bare equation is even in a: its result at one sign stands for the other. */
+function mirror(rec: RunRecord): RunRecord {
+  const r = rec.result;
+  return {
+    ...rec,
+    key: partnerKeyOf(rec.key),
+    mirrored: true,
+    result: {
+      ...r, runKey: partnerKeyOf(r.runKey), runId: `${r.runId}-mirror`,
+      scales: { ...r.scales, sign: r.scales.sign > 0 ? -1 : 1, na_um2: -r.scales.na_um2 },
+    },
+  };
+}
+
+/** The signs a job actually integrates: the bare pair runs once. */
+const runSigns = (job: QueuedJob): Sign[] => (job.model === 'bare' && job.purpose === 'main' ? job.signs.slice(0, 1) : job.signs);
+
+interface Active {
+  /** null for continuations */
+  job: QueuedJob | null;
+  runs: Map<string, Sign>;
+  pending: number;
+  /** convergence checks wanted once every run of the job is in */
+  checks: Partial<Record<SignKey, { key: string; tEval: number[] }>>;
+  /** the key selected when the job ends */
+  select: string | null;
+}
+
 export function useRunLibrary(setup: RunSetup | null) {
   const workerRef = useRef<Worker | null>(null);
-  const runIdRef = useRef('');
   const stopRequestedRef = useRef(false);
   const queueRef = useRef<QueuedJob[]>([]);
-  const currentRef = useRef<QueuedJob | null>(null);
+  const activeRef = useRef<Active | null>(null);
   const setupRef = useRef<RunSetup | null>(null);
 
   const [records, setRecords] = useState<Record<string, RunRecord>>({});
@@ -164,141 +227,191 @@ export function useRunLibrary(setup: RunSetup | null) {
   recordsRef.current = records;
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [progress, setProgress] = useState<RunProgress>(IDLE);
-  const [live, setLive] = useState<LiveRun | null>(null);
+  const [liveById, setLiveById] = useState<Record<string, LiveRun>>({});
 
-  const label = (job: RunJob, purpose: 'main' | 'check') => {
+  const label = (job: RunJob, purpose: 'main' | 'check', signs: Sign[]) => {
     const m = MODEL_BY_ID[job.model];
     const kernel = job.kernel === 'quantum' && m.allowsQuantum ? ', Bose +1' : '';
-    return `${m.short}${kernel} · ${PRECISION[job.accuracy].label}${purpose === 'check' ? ' convergence check' : ''}`;
+    const pair = signs.length > 1 ? ' ±a' : '';
+    return `${m.short}${kernel}${pair} · ${PRECISION[job.accuracy].label}${purpose === 'check' ? ' convergence check' : ''}`;
+  };
+
+  /** Top-level progress from the runs of the job: the least advanced one leads. */
+  const summarise = (prev: RunProgress, perSign: RunProgress['perSign']): RunProgress => {
+    const runs = Object.values(perSign).filter((p): p is SignProgress => p != null);
+    const lead = runs.filter((p) => !p.done).sort((a, b) => a.pct - b.pct)[0] ?? runs[0];
+    if (!lead) return { ...prev, perSign };
+    return {
+      ...prev, perSign, pct: lead.pct, t_s: lead.t_s, kp: lead.kp, loopDressing: lead.loopDressing,
+      poleIndicator: lead.poleIndicator, poleShare: lead.poleShare, elapsed_ms: lead.elapsed_ms,
+      phase: prev.phase === 'continuing' ? 'continuing' : lead.phase,
+    };
   };
 
   const post = useCallback((w: Worker, job: QueuedJob) => {
     const s = setupRef.current;
     if (!s) return;
-    const id = `run-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    runIdRef.current = id;
     stopRequestedRef.current = false;
-    currentRef.current = job;
-    setLive(null);
-    const req: WKERunRequest = {
-      type: 'run',
-      runId: id,
-      model: job.model,
-      kernel: job.kernel,
-      accuracy: job.accuracy,
-      q: s.q,
-      density_um3: s.density_um3,
-      a_a0: s.a_a0,
-      speciesKey: s.speciesKey,
-      stopKpFraction: s.stopKpFraction,
-      stopAtBreakdown: job.stopAtBreakdown,
-      tauMax: TAU_MAX,
-      nSnapshots: NSNAPSHOTS,
-      tEval_s: job.tEval_s,
-    };
-    setProgress({ running: true, label: label(job, job.purpose), phase: 'setup', pct: 0, queued: queueRef.current.length, purpose: job.purpose });
-    w.postMessage(req);
+    const signs = runSigns(job);
+    const runs = new Map<string, Sign>();
+    const perSign: RunProgress['perSign'] = {};
+    for (const sign of signs) {
+      const id = `run-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      runs.set(id, sign);
+      perSign[sk(sign)] = { phase: 'setup', pct: 0 };
+    }
+    activeRef.current = { job, runs, pending: runs.size, checks: {}, select: null };
+    setLiveById({});
+    setProgress({ running: true, label: label(job, job.purpose, job.signs), phase: 'setup', pct: 0, queued: queueRef.current.length, purpose: job.purpose, perSign });
+    // the runs of a pair evolve over a common time span: the first to reach its target waits for the other
+    const pair = runs.size > 1 ? { id: `pair-${[...runs.keys()][0]}`, size: runs.size } : undefined;
+    for (const [id, sign] of runs) {
+      const req: WKERunRequest = {
+        type: 'run',
+        runId: id,
+        model: job.model,
+        kernel: job.kernel,
+        accuracy: job.accuracy,
+        q: s.q,
+        density_um3: s.density_um3,
+        a_a0: sign * s.aAbs_a0,
+        speciesKey: s.speciesKey,
+        stopKpFraction: s.stopKpFraction,
+        stopAtBreakdown: job.stopAtBreakdown,
+        tauMax: TAU_MAX,
+        nSnapshots: NSNAPSHOTS,
+        tEval_s: job.tEval?.[sk(sign)],
+        pair,
+      };
+      w.postMessage(req);
+    }
   }, []);
 
   const advance = useCallback((w: Worker) => {
     const next = queueRef.current.shift();
     if (next) post(w, next);
     else {
-      currentRef.current = null;
+      activeRef.current = null;
       setProgress(IDLE);
     }
   }, [post]);
+
+  /** One run of the active job has returned; when all have, queue checks and move on. */
+  const finishRun = useCallback((w: Worker) => {
+    const act = activeRef.current;
+    if (!act) return;
+    act.pending -= 1;
+    if (act.pending > 0) return;
+    if (act.select) setSelectedKey(act.select);
+    const signs = (Object.keys(act.checks) as SignKey[]);
+    if (act.job && signs.length && !stopRequestedRef.current) {
+      const next = nextLevel(act.job.accuracy)!;
+      queueRef.current.unshift({
+        ...act.job, accuracy: next, purpose: 'check',
+        signs: signs.map((k) => (k === '+' ? 1 : -1) as Sign),
+        mainKeys: Object.fromEntries(signs.map((k) => [k, act.checks[k]!.key])),
+        tEval: Object.fromEntries(signs.map((k) => [k, act.checks[k]!.tEval])),
+      });
+    }
+    advance(w);
+  }, [advance]);
 
   const spawn = useCallback((): Worker => {
     const w = new Worker(new URL('../workers/wke.worker.ts', import.meta.url), { type: 'module' });
     w.onmessage = (e: MessageEvent<WKEResponse>) => {
       const msg = e.data;
-      if (msg.runId !== runIdRef.current) return;
+      const act = activeRef.current;
+      const sign = act?.runs.get(msg.runId);
+      if (!act || sign == null) return;
       if (msg.type === 'progress') {
-        setProgress((prev) => ({
-          ...prev,
-          running: true,
-          phase: prev.phase === 'continuing' ? 'continuing' : msg.phase,
-          pct: msg.pct,
-          t_s: msg.t_s,
-          kp: msg.kp,
-          loopDressing: msg.loopDressing,
-          poleIndicator: msg.poleIndicator,
-          elapsed_ms: msg.elapsed_ms,
+        setProgress((prev) => summarise(prev, {
+          ...prev.perSign,
+          [sk(sign)]: {
+            phase: prev.phase === 'continuing' ? 'continuing' : msg.phase, pct: msg.pct, t_s: msg.t_s, kp: msg.kp,
+            loopDressing: msg.loopDressing, poleIndicator: msg.poleIndicator, poleShare: msg.poleShare, elapsed_ms: msg.elapsed_ms,
+          },
         }));
         return;
       }
       if (msg.type === 'live') {
-        if (currentRef.current?.purpose === 'check') return;
-        setLive((prev) => {
+        if (act.job?.purpose === 'check') return;
+        setLiveById((all) => {
+          const prev = all[msg.runId];
           const prior = msg.continuation ? recordsRef.current[msg.runKey]?.result : undefined;
           const offsetT = prior?.snapshots.at(-1)?.t_s ?? 0;
           const offsetTau = prior?.snapshots.at(-1)?.tau ?? 0;
           const snapshot = { ...msg.snapshot, t_s: msg.snapshot.t_s + offsetT, tau: msg.snapshot.tau + offsetTau,
             stage: msg.continuation && msg.snapshot.stage === 'initial' ? 'continued' : msg.snapshot.stage };
-          const first = prev?.sourceRunId === msg.runId ? prev : {
+          const first: LiveRun = prev ?? {
             sourceRunId: msg.runId, runId: prior?.runId ?? msg.runId, runKey: msg.runKey,
-            model: msg.model, kernel: msg.kernel, 
+            model: msg.model, kernel: msg.kernel, sign,
             k_um_inv: msg.k_um_inv, kp0_um_inv: msg.kp0_um_inv,
             stopKpFraction: msg.stopKpFraction, scales: { density_um3: msg.density_um3 },
             snapshots: prior?.snapshots ?? [],
           };
-          return { ...first, snapshots: onLattice([...first.snapshots, snapshot], msg.stride) };
+          return { ...all, [msg.runId]: { ...first, snapshots: onLattice([...first.snapshots, snapshot], msg.stride) } };
         });
         return;
       }
-      setLive(null);
+      setLiveById((all) => {
+        const { [msg.runId]: _gone, ...rest } = all;
+        return rest;
+      });
       if (msg.type === 'error') {
+        // one failed run ends the job: stop its partner, drop the queue
+        for (const id of act.runs.keys()) if (id !== msg.runId) w.postMessage({ type: 'stop', runId: id });
         queueRef.current = [];
-        currentRef.current = null;
+        activeRef.current = null;
+        setLiveById({});
         setProgress({ ...IDLE, error: msg.message });
         return;
       }
-      const job = currentRef.current;
+      setProgress((prev) => summarise(prev, { ...prev.perSign, [sk(sign)]: { ...(prev.perSign[sk(sign)] ?? { phase: 'integrating', pct: 1 }), pct: 1, done: true } }));
+      const job = act.job;
       if (msg.continuation) {
         setRecords((prev) => {
           const prior = prev[msg.runKey];
           if (!prior) return prev;
-          return { ...prev, [msg.runKey]: { ...prior, result: mergeContinuation(prior.result, msg), check: undefined } };
+          const merged: RunRecord = { ...prior, result: mergeContinuation(prior.result, msg), check: undefined };
+          const partner = prev[partnerKeyOf(msg.runKey)];
+          return { ...prev, [msg.runKey]: merged, ...(partner?.mirrored ? { [partner.key]: mirror(merged) } : {}) };
         });
-        advance(w);
+        finishRun(w);
         return;
       }
-      if (job?.purpose === 'check' && job.mainKey) {
-        const mainKey = job.mainKey;
-        setRecords((prev) => {
-          const main = prev[mainKey];
-          if (!main) return prev;
-          return { ...prev, [mainKey]: { ...main, check: stopRequestedRef.current || msg.termination === 'stopped'
-            ? undefined : compareRuns(main.result, msg, msg.accuracy) } };
-        });
-        advance(w);
+      if (job?.purpose === 'check') {
+        const mainKey = job.mainKeys?.[sk(sign)];
+        if (mainKey) {
+          setRecords((prev) => {
+            const main = prev[mainKey];
+            if (!main) return prev;
+            return { ...prev, [mainKey]: { ...main, check: stopRequestedRef.current || msg.termination === 'stopped'
+              ? undefined : compareRuns(main.result, msg, msg.accuracy) } };
+          });
+        }
+        finishRun(w);
         return;
       }
       const fingerprint = setupRef.current?.fingerprint ?? '';
       const next = nextLevel(msg.accuracy);
       const wantCheck = !stopRequestedRef.current && job?.checkConvergence && next != null && msg.dtTarget_s != null;
-      setRecords((prev) => ({
-        ...prev,
-        [msg.runKey]: { key: msg.runKey, result: msg, fingerprint, check: wantCheck ? 'pending' : undefined },
-      }));
-      setSelectedKey(msg.runKey);
-      if (wantCheck && job) {
-        queueRef.current.unshift({
-          ...job, accuracy: next!, purpose: 'check', mainKey: msg.runKey, tEval_s: sampleTimes(msg),
-        });
-      }
-      advance(w);
+      const rec: RunRecord = { key: msg.runKey, result: msg, fingerprint, check: wantCheck ? 'pending' : undefined };
+      const mirrored = job && job.model === 'bare' && job.signs.length > 1 ? mirror(rec) : null;
+      setRecords((prev) => ({ ...prev, [msg.runKey]: rec, ...(mirrored ? { [mirrored.key]: mirrored } : {}) }));
+      if (wantCheck) act.checks[sk(sign)] = { key: msg.runKey, tEval: sampleTimes(msg) };
+      if (!act.select || sign === (job?.signs[0] ?? sign)) act.select = msg.runKey;
+      finishRun(w);
     };
     w.onerror = (e) => {
       queueRef.current = [];
-      currentRef.current = null;
+      activeRef.current = null;
       workerRef.current?.terminate();
       workerRef.current = null;
+      setLiveById({});
       setProgress({ ...IDLE, error: e.message || 'The solver stopped unexpectedly.' });
     };
     return w;
-  }, [advance]);
+  }, [finishRun]);
 
   useEffect(() => () => { workerRef.current?.terminate(); }, []);
   useEffect(() => { setupRef.current = setup; }, [setup]);
@@ -307,48 +420,58 @@ export function useRunLibrary(setup: RunSetup | null) {
     if (!setup || jobs.length === 0) return;
     setupRef.current = setup;
     workerRef.current ??= spawn();
-    queueRef.current = jobs.map((j) => ({ ...j, purpose: 'main' as const }));
+    queueRef.current = jobs.map((j) => ({ ...j, purpose: 'main' as const, signs: setup.signs }));
     advance(workerRef.current);
   }, [setup, spawn, advance]);
 
-  const continueRun = useCallback((key: string) => {
-    const rec = recordsRef.current[key];
-    if (!rec || !workerRef.current) return;
-    const id = `cont-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    runIdRef.current = id;
+  /** Extend finished runs further in time; the runs of a pair continue together. */
+  const continueRuns = useCallback((keys: string[]) => {
+    const w = workerRef.current;
+    if (!w) return;
+    // a mirrored bare record follows its source
+    const sources = Array.from(new Set(keys.map((k) => (recordsRef.current[k]?.mirrored ? partnerKeyOf(k) : k))))
+      .filter((k) => recordsRef.current[k] && !recordsRef.current[k].mirrored);
+    if (!sources.length) return;
     stopRequestedRef.current = false;
-    currentRef.current = null;
     queueRef.current = [];
-    const targetFrac = setupRef.current?.stopKpFraction ?? rec.result.stopKpFraction;
-    const currentKp = rec.result.snapshots.at(-1)?.kp_um_inv ?? rec.result.kp0_um_inv;
-    // The last state of a finished run sits exactly on its target, so compare
-    // with a tolerance; otherwise the continuation re-detects the same crossing
-    // on its first step and stops at once.
-    const reachedNewTarget = (rec.result.reachedTarget && targetFrac >= rec.result.stopKpFraction - 1e-12)
-      || currentKp <= targetFrac * rec.result.kp0_um_inv * (1 + 1e-6);
-    const req: WKEContinueRequest = {
-      type: 'continue',
-      runId: id,
-      runKey: key,
-      alreadyReachedTarget: reachedNewTarget,
-      kp0_um_inv: rec.result.kp0_um_inv,
-      stopKpFraction: targetFrac,
-      nSnapshots: NSNAPSHOTS,
-    };
-    const m = MODEL_BY_ID[rec.result.model];
-    setLive(null);
-    setProgress({ running: true, label: `Continuing ${m.short}`, phase: 'continuing', pct: 0, queued: 0 });
-    workerRef.current.postMessage(req);
+    const runs = new Map<string, Sign>();
+    const perSign: RunProgress['perSign'] = {};
+    const targetFrac = setupRef.current?.stopKpFraction;
+    // A pair continues together to twice its current (common) end time.
+    const pair = sources.length > 1 ? { id: `pair-cont-${Date.now()}`, size: sources.length } : undefined;
+    const untilT_s = pair ? 2 * Math.max(...sources.map((k) => recordsRef.current[k].result.snapshots.at(-1)?.t_s ?? 0)) : undefined;
+    const reqs: WKEContinueRequest[] = sources.map((key) => {
+      const rec = recordsRef.current[key];
+      const id = `cont-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const sign = signOfKey(key);
+      runs.set(id, sign);
+      perSign[sk(sign)] = { phase: 'continuing', pct: 0 };
+      const frac = targetFrac ?? rec.result.stopKpFraction;
+      const currentKp = rec.result.snapshots.at(-1)?.kp_um_inv ?? rec.result.kp0_um_inv;
+      // The last state of a finished run sits exactly on its target, so compare
+      // with a tolerance; otherwise the continuation re-detects the same crossing
+      // on its first step and stops at once.
+      const reachedNewTarget = (rec.result.reachedTarget && frac >= rec.result.stopKpFraction - 1e-12)
+        || currentKp <= frac * rec.result.kp0_um_inv * (1 + 1e-6);
+      return {
+        type: 'continue', runId: id, runKey: key, alreadyReachedTarget: reachedNewTarget,
+        kp0_um_inv: rec.result.kp0_um_inv, stopKpFraction: frac, nSnapshots: NSNAPSHOTS, untilT_s, pair,
+      };
+    });
+    activeRef.current = { job: null, runs, pending: runs.size, checks: {}, select: null };
+    const m = MODEL_BY_ID[recordsRef.current[sources[0]].result.model];
+    setLiveById({});
+    setProgress({ running: true, label: `Continuing ${m.short}${keys.length > 1 ? ' ±a' : ''}`, phase: 'continuing', pct: 0, queued: 0, perSign });
+    for (const r of reqs) w.postMessage(r);
   }, []);
 
   const cancel = useCallback(() => {
     workerRef.current?.terminate();
     workerRef.current = null;
     queueRef.current = [];
-    currentRef.current = null;
-    runIdRef.current = '';
+    activeRef.current = null;
     stopRequestedRef.current = false;
-    setLive(null);
+    setLiveById({});
     setRecords((prev) => {
       const next: Record<string, RunRecord> = {};
       for (const [k, r] of Object.entries(prev)) next[k] = r.check === 'pending' ? { ...r, check: undefined } : r;
@@ -360,22 +483,29 @@ export function useRunLibrary(setup: RunSetup | null) {
   const clear = useCallback(() => {
     setRecords({});
     setSelectedKey(null);
-    setLive(null);
+    setLiveById({});
   }, []);
 
+  /** Stop every run of the current job after its current step, keeping what they have. */
   const stop = useCallback(() => {
-    if (!workerRef.current || !runIdRef.current) return;
+    const act = activeRef.current;
+    if (!workerRef.current || !act) return;
     queueRef.current = [];
     stopRequestedRef.current = true;
     setProgress((prev) => ({ ...prev, stopping: true, queued: 0 }));
-    workerRef.current.postMessage({ type: 'stop', runId: runIdRef.current });
+    for (const id of act.runs.keys()) workerRef.current.postMessage({ type: 'stop', runId: id });
   }, []);
 
   /** Whether the worker still holds the end state needed to continue a run. */
-  const canContinue = (key: string) => workerRef.current != null && key in recordsRef.current;
+  const canContinue = (key: string) => {
+    const rec = recordsRef.current[key];
+    return workerRef.current != null && rec != null && (!rec.mirrored || partnerKeyOf(key) in recordsRef.current);
+  };
+
+  const live = Object.values(liveById).sort((a, b) => b.sign - a.sign);
 
   return {
-    records, live, selectedKey, setSelectedKey, progress, run, continueRun, stop, cancel, clear, canContinue,
+    records, live, selectedKey, setSelectedKey, progress, run, continueRuns, stop, cancel, clear, canContinue,
     keyOf: runKeyOf,
   };
 }

@@ -12,7 +12,7 @@ import type { KpViewOptions } from './KpCompareCard';
 import { MODEL_BY_ID } from '../physics/models';
 import { PRECISION } from '../physics/precision';
 import type { RunRecord } from '../state/useRunLibrary';
-import { modelColor, modelDashed, runLabel } from '../ui/runView';
+import { modelDashed, runColor, runLabel } from '../ui/runView';
 
 const WIDTH = 900;
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -49,7 +49,7 @@ export async function exportKpFigures(o: Omit<KpViewOptions, 'yMode' | 'rateScal
       const view = kpView({ ...o, ...f.view, selectedKey: null });
       const markers: PlotProps['markers'] = view.rate ? [] : [{ id: 'stop', axis: 'y', value: view.targetY, label: 'target', color: 'var(--faint)' }];
       const legend = o.records.map((rec) => ({
-        label: runLabel(rec.result), color: modelColor(rec.result.model), dashed: modelDashed(rec.result.model, rec.result.kernel),
+        label: runLabel(rec.result, o.pair), color: runColor(rec.result, o.pair), dashed: modelDashed(rec.result.model, rec.result.kernel),
       }));
       if (view.hasGuide) legend.push({ label: `guide: ${o.guideSlope.toPrecision(2)} ħ/m`, color: 'var(--faint)', dashed: true });
       svgs.push({ name: f.name, ...renderSvg({ ...view.plot, markers, maxHeight: WIDTH / 2 }, f.title, legend) });
@@ -199,7 +199,7 @@ function dataCsv(records: RunRecord[], guideSlope: number, hbarOverM: number | n
   const lines = [
     '# peak momentum of every run on this setup; rate = d(1/k_p^2)/dt by centred differences, in units of hbar/m',
     `# guide slope: ${guideSlope} hbar/m${hbarOverM != null ? ` = ${guideSlope * hbarOverM} um^2/s (hbar/m = ${hbarOverM} um^2/s)` : ''}`,
-    'model,accuracy,t_s,k_p_um_inv,k_p_over_k_p0,inv_k_p2_um2,loop_parameter_kxi_over_kp_sq,rate_hbar_over_m',
+    'model,sign_a,accuracy,t_s,k_p_um_inv,k_p_over_k_p0,inv_k_p2_um2,loop_parameter_kxi_over_kp_sq,rate_hbar_over_m',
   ];
   for (const rec of records) {
     const r = rec.result;
@@ -216,7 +216,7 @@ function dataCsv(records: RunRecord[], guideSlope: number, hbarOverM: number | n
     }
     for (let i = 0; i < ts.length; i++) {
       const row = [ts[i], kps[i], kps[i] / r.kp0_um_inv, 1 / (kps[i] * kps[i]), (kXi / kps[i]) ** 2, rate[i]];
-      lines.push([name, PRECISION[r.accuracy].label, ...row.map((v) => (v == null ? '' : v.toPrecision(9)))].join(','));
+      lines.push([name, r.scales.sign > 0 ? '+' : '-', PRECISION[r.accuracy].label, ...row.map((v) => (v == null ? '' : v.toPrecision(9)))].join(','));
     }
   }
   return lines.join('\n');

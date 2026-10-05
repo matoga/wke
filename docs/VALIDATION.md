@@ -3,7 +3,8 @@
 How the solver is checked, and how accurate it is. Everything below is reproduced by
 
 ```bash
-npm test          # physics, loop models, UI smoke test, provenance audit
+npm test          # fast checks: physics, UI smoke test, provenance audit
+npm run test:full # everything, including the loop models and ±a pairs (slow)
 npm run bench     # convergence study (slow; see scripts/convergence-bench.ts)
 ```
 
@@ -31,7 +32,10 @@ under-resolved (section 3).
 ## 2. Loop functionals and renormalised models
 
 `tests/loops.test.ts` checks the loop machinery against values computed independently in the continuum (adaptive
-quadrature, cross-checked by Monte Carlo over the resonant manifold), for a Gaussian shell at k_ξ/kₚ = 0.15.
+quadrature, cross-checked by Monte Carlo over the resonant manifold), for a Gaussian shell at k_ξ/kₚ = 0.15. The
+ratios of heuristics B and C come from the continuum reference in `analysis/reference/` (numpy only), which evaluates the loops
+and the collision integral in the continuum without the solver's grid or tables, and reproduces the one-loop, chain
+and heuristic A ratios to 3 × 10⁻⁴.
 
 | Check | Result |
 | --- | --- |
@@ -40,10 +44,11 @@ quadrature, cross-checked by Monte Carlo over the resonant manifold), for a Gaus
 | Re L₋ and Im L₋ at six (Q, ω), Re L₊ at four (P, ω₊) | within 10⁻³ |
 | Static limit χ₀ = −(1/N_cal)∫f dp | within 10⁻⁴ |
 | Power-law spectrum f ∝ s^(−7/3) | within 2 × 10⁻⁵ |
-| C_model/C_bare at five grid momenta, one loop, chain, heuristic A, both signs of a | within 4.5 × 10⁻³ (parity), 4 × 10⁻³ (Standard), 4 × 10⁻⁴ (High quadrature) |
+| C_model/C_bare at five grid momenta, one loop, chain, heuristics A, B and C, both signs of a | within 5 × 10⁻³ (parity), 10⁻³ (16 × 2 quadrature); one loop, chain and B within 4 × 10⁻⁴ at High quadrature (a > 0) |
+| Heuristic B near its pole (3 × the reference coupling, a < 0, weights ≈ 4) | the joint s-t average matches a direct average of the same events (24 × 64 points in P and φ) to 2.8 × 10⁻⁴; the product of the two marginals differs from it by 0.7 to 1.0 × 10⁻³ |
 | Loops switched off | every model equals the bare equation to 10⁻¹³ |
 | One loop is odd in a | C(+a) + C(−a) = 2 C_bare to 10⁻¹⁴ |
-| First order | (heuristic A − bare) = 4 (chain − bare) to 10⁻⁴; heuristic B = one loop to 1.3 × 10⁻⁴ |
+| First order | (heuristic A − bare) = 4 (chain − bare) to 10⁻⁴; heuristic B = one loop to 10⁻³ of the one-loop correction (the two use different s-channel quadratures) |
 | Number and energy balance | within 15% of the bare scheme's for every model and sign |
 | Rayleigh-Jeans state | stays a fixed point at the bare discretisation level |
 | Pole and negative-bracket stops | trip at strong coupling and end the run cleanly |

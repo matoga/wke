@@ -3,18 +3,28 @@
 import type { KernelType } from '../physics/collision';
 import type { ModelId } from '../physics/models';
 import { MODEL_BY_ID } from '../physics/models';
-import { POLE_WEIGHT_LIMIT } from '../physics/rhs';
-import type { WKEResult, WKESnapshot } from '../types/wke';
+import { POLE_DRESSING_LIMIT, POLE_RATE_SHARE } from '../physics/rhs';
+import type { Sign, WKEResult, WKESnapshot } from '../types/wke';
 import type { Tone } from './primitives';
 
-export const modelColor = (model: ModelId): string => `var(--m-${model})`;
+/** The model's colour; the attractive run of a ±a pair takes a lighter tint of it. */
+export const modelColor = (model: ModelId, sign: Sign = 1): string => `var(--m-${model}${sign < 0 ? '-neg' : ''})`;
+
+/** Colour of a run: its model, tinted when a < 0 and shown as part of a pair. */
+export const runColor = (r: Pick<WKEResult, 'model' | 'scales'>, pair: boolean): string =>
+  modelColor(r.model, pair ? r.scales.sign : 1);
+
+/** "+a" or "−a". */
+export const signLabel = (sign: Sign): string => (sign > 0 ? '+a' : '−a');
 
 export const modelDashed = (model: ModelId, kernel: KernelType): boolean =>
   kernel === 'quantum';
 
-export function runLabel(r: Pick<WKEResult, 'model' | 'kernel'>): string {
+/** Short name of a run; with `pair`, followed by the sign of a. */
+export function runLabel(r: Pick<WKEResult, 'model' | 'kernel'> & { scales?: { sign: Sign } }, pair = false): string {
   const m = MODEL_BY_ID[r.model];
-  return r.kernel === 'quantum' ? `${m.short}, Bose +1` : m.short;
+  const base = r.kernel === 'quantum' ? `${m.short}, Bose +1` : m.short;
+  return pair && r.scales ? `${base} · ${signLabel(r.scales.sign)}` : base;
 }
 
 /** Index of the saved state nearest to time t. */
@@ -73,11 +83,19 @@ export function loopVerdict(r: WKEResult): Verdict | null {
     return { tone: 'ok', text: `${text}: perturbative`, title };
   }
   const wMax = r.kpTrack.pole.reduce((m, v) => Math.max(m, v), 0);
-  const title = `Largest resummed weight 1/|1 − cL|² reached during the run. The run stops at ${POLE_WEIGHT_LIMIT}.`;
-  const text = `vertex weight up to ${wMax.toFixed(2)}`;
-  if (wMax >= POLE_WEIGHT_LIMIT) return { tone: 'bad', text: `${text}: at the pole`, title };
-  if (wMax >= 2) return { tone: 'warn', text: `${text}: near the pole`, title };
+  const share = (r.kpTrack.share ?? []).reduce((m, v) => (Number.isFinite(v) ? Math.max(m, v) : m), 0);
+  const title = `Largest share of the collision rate carried by collisions whose averaged dressing M exceeds ${POLE_DRESSING_LIMIT};`
+    + ` the model has broken down above ${100 * POLE_RATE_SHARE}%. The largest sampled vertex weight 1/|1 − cL|² was ${wMax.toFixed(1)}`
+    + ' (a diagnostic only: near a pole it depends on where the table nodes fall).';
+  const text = `M > ${POLE_DRESSING_LIMIT} on ${sharePercent(share)} of the rate`;
+  if (share > POLE_RATE_SHARE) return { tone: 'bad', text: `${text}: at the pole`, title };
+  if (share > 0 || wMax >= 2) return { tone: 'warn', text: `${text}: near the pole`, title };
   return { tone: 'ok', text: `${text}: far from the pole`, title };
+}
+
+/** A rate share as a percentage with two significant digits, e.g. 0.35%. */
+export function sharePercent(share: number): string {
+  return share > 0 ? `${Number((100 * share).toPrecision(2))}%` : '0%';
 }
 
 export function terminationVerdict(r: WKEResult): Verdict {

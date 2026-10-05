@@ -32,6 +32,9 @@ export interface ChannelGeometry {
   /** event interval ends, in cell units from the pair's Q_lo */
   ta: Float64Array;
   tb: Float64Array;
+  /** first and last table sample (index into the pair's F block) inside some event's interval */
+  pairUsedLo: Int32Array;
+  pairUsedHi: Int32Array;
   buildTime_ms: number;
 }
 
@@ -50,6 +53,8 @@ export function buildChannelGeometry(
   const pairPhi = new Int32Array(nPairs);
   const ta = new Float64Array(geom.nEvents);
   const tb = new Float64Array(geom.nEvents);
+  const pairUsedLo = new Int32Array(nPairs);
+  const pairUsedHi = new Int32Array(nPairs);
 
   let nF = 0;
   let nPhi = 0;
@@ -72,6 +77,7 @@ export function buildChannelGeometry(
 
     const invH = 1 / h;
     const pSq = p * p;
+    let lo = Infinity, hi = -Infinity;
     for (let e = pairOffsets[k]; e < pairOffsets[k + 1]; e++) {
       const q2 = p2[e];
       const p3 = Math.sqrt(p1 * p1 + q2 * q2 - pSq);
@@ -79,11 +85,16 @@ export function buildChannelGeometry(
       const b = Math.min(qhi, q2 + p3);
       ta[e] = Math.min(cells, Math.max(0, (a - qlo) * invH));
       tb[e] = Math.min(cells, Math.max(ta[e], (b - qlo) * invH));
+      lo = Math.min(lo, ta[e]);
+      hi = Math.max(hi, tb[e]);
     }
+    // the samples of every cell that an event interval touches
+    pairUsedLo[k] = lo > hi ? 1 : 2 * Math.min(cells - 1, Math.floor(lo));
+    pairUsedHi[k] = lo > hi ? 0 : 2 * Math.min(cells, Math.ceil(hi) || 1);
   }
 
   return {
-    pairQlo, pairH, pairOmega, pairCells, pairF, pairPhi, nF, nPhi, ta, tb,
+    pairQlo, pairH, pairOmega, pairCells, pairF, pairPhi, nF, nPhi, ta, tb, pairUsedLo, pairUsedHi,
     buildTime_ms: (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0,
   };
 }

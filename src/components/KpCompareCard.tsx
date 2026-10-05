@@ -6,15 +6,19 @@ import { Plot } from './Plot';
 import type { PlotProps, PointMark, Series } from './Plot';
 import { exportKpFigures } from './kpExport';
 import { fmt, time } from '../ui/format';
-import { loopVerdict, modelColor, modelDashed, runLabel, terminationVerdict } from '../ui/runView';
+import { loopVerdict, modelColor, modelDashed, runColor, runLabel, signLabel, terminationVerdict } from '../ui/runView';
 import { MODELS } from '../physics/models';
 import { PRECISION } from '../physics/precision';
 import type { RunRecord } from '../state/useRunLibrary';
+import { keyAtSign, signOfKey } from '../types/wke';
+import type { Sign } from '../types/wke';
 
 export type KpYMode = 'ratio' | 'abs' | 'invk2' | 'rate';
 
 export interface KpViewOptions {
   records: RunRecord[];
+  /** both signs of a are shown: −a runs are tinted, with hollow target dots */
+  pair: boolean;
   selectedKey: string | null;
   yMode: KpYMode;
   rateScale: 'linear' | 'log';
@@ -27,7 +31,7 @@ export interface KpViewOptions {
 
 /** Everything one view of the card draws, except the draggable target marker. */
 export function kpView(o: KpViewOptions) {
-  const { records, selectedKey, yMode, rateScale, xChoice, stopKpFraction, guideSlope, hbarOverM_um2_per_s } = o;
+  const { records, pair, selectedKey, yMode, rateScale, xChoice, stopKpFraction, guideSlope, hbarOverM_um2_per_s } = o;
   const ends = records.map((r) => r.result.kpTrack.t_s.at(-1) ?? 0).filter((t) => t > 0);
   const spread = ends.length > 1 ? Math.max(...ends) / Math.min(...ends) : 1;
   const invk2 = yMode === 'invk2';
@@ -44,20 +48,21 @@ export function kpView(o: KpViewOptions) {
     if (rate) {
       const { x, y } = rateTrack(r, hbarOverM_um2_per_s!);
       series.push({
-        id: rec.key, label: runLabel(r), x, y, color: modelColor(r.model),
+        id: rec.key, label: runLabel(r, pair), x, y, color: runColor(r, pair),
         dashed: modelDashed(r.model, r.kernel), width: rec.key === selectedKey ? 2.6 : 1.7,
       });
       continue;
     }
     const t = r.kpTrack.t_s.map((v) => v * 1e3);
     const y = r.kpTrack.kp.map((v) => yOf(v, r.kp0_um_inv));
-    const color = modelColor(r.model);
+    const color = runColor(r, pair);
     series.push({
-      id: rec.key, label: runLabel(r), x: xScale === 'log' ? t.slice(1) : t, y: xScale === 'log' ? y.slice(1) : y, color,
+      id: rec.key, label: runLabel(r, pair), x: xScale === 'log' ? t.slice(1) : t, y: xScale === 'log' ? y.slice(1) : y, color,
       dashed: modelDashed(r.model, r.kernel), width: rec.key === selectedKey ? 2.6 : 1.7,
     });
     if (r.dtTarget_s != null) {
-      points.push({ id: `${rec.key}-hit`, x: r.dtTarget_s * 1e3, y: yOf(r.stopKpFraction * r.kp0_um_inv, r.kp0_um_inv), color, shape: 'dot', title: `${runLabel(r)}: ${time(r.dtTarget_s).value} ${time(r.dtTarget_s).unit}` });
+      points.push({ id: `${rec.key}-hit`, x: r.dtTarget_s * 1e3, y: yOf(r.stopKpFraction * r.kp0_um_inv, r.kp0_um_inv), color, shape: 'dot',
+        hollow: pair && r.scales.sign < 0, title: `${runLabel(r, pair)}: ${time(r.dtTarget_s).value} ${time(r.dtTarget_s).unit}` });
     }
     if (r.termination === 'pole' || r.termination === 'nonfinite') {
       points.push({ id: `${rec.key}-stop`, x: t[t.length - 1], y: y[y.length - 1], color, shape: 'cross', title: r.terminationMessage ?? 'stopped' });
@@ -151,12 +156,14 @@ export function rateTrack(r: RunRecord['result'], hbarOverM_um2_per_s: number): 
 }
 
 export function KpCompareCard({
-  records, selectedKey, onSelect, stopKpFraction, onStopKpFractionChange, hbarOverM_um2_per_s,
+  records, pair, selectedKey, onSelect, stopKpFraction, onStopKpFractionChange, hbarOverM_um2_per_s,
 }: {
   /** ħ/m of the species (μm²/s), for the 1/kₚ² guide line */
   hbarOverM_um2_per_s: number | null;
   /** runs on the current setup, in model order */
   records: RunRecord[];
+  /** both signs of a are in view */
+  pair: boolean;
   selectedKey: string | null;
   onSelect: (key: string) => void;
   stopKpFraction: number;
@@ -168,14 +175,16 @@ export function KpCompareCard({
   // Guide slope in units of ħ/m, chosen on a log slider between 0.01 and 10.
   const [guideSlope, setGuideSlope] = useState(0.37);
   const [exporting, setExporting] = useState(false);
-  const view = kpView({ records, selectedKey, yMode, rateScale, xChoice, stopKpFraction, guideSlope, hbarOverM_um2_per_s });
+  const view = kpView({ records, pair, selectedKey, yMode, rateScale, xChoice, stopKpFraction, guideSlope, hbarOverM_um2_per_s });
   const { invk2, rate, kp0, targetY, yOf, hasGuide } = view;
   const xScale = view.plot.xScale;
   const bare = records.find((r) => r.result.model === 'bare' && r.result.kernel === 'classical');
+  const rows = pair ? pairRows(records) : [];
+  const selectedBase = selectedKey ? keyAtSign(selectedKey, 1) : null;
   const exportAll = async () => {
     setExporting(true);
     try {
-      await exportKpFigures({ records, stopKpFraction, guideSlope, hbarOverM_um2_per_s });
+      await exportKpFigures({ records, pair, stopKpFraction, guideSlope, hbarOverM_um2_per_s });
     } finally {
       setExporting(false);
     }
@@ -245,7 +254,15 @@ export function KpCompareCard({
           )}
           <p className="hint">Scroll to zoom (Shift: horizontal only, Alt: vertical only), drag to pan, double-click to reset.</p>
           <div className="legend">
-            {records.map((rec) => (
+            {pair ? rows.map((row) => {
+              const r = (row.plus ?? row.minus)!.result;
+              const sel = row.key === selectedBase;
+              return (
+                <button key={row.key} type="button" className={sel ? 'sel' : ''} aria-pressed={sel} onClick={() => onSelect(row.key)}>
+                  {runLabel(r)} <PairSwatch model={r.model} dashed={modelDashed(r.model, r.kernel)} />
+                </button>
+              );
+            }) : records.map((rec) => (
               <LegendItem key={rec.key} color={modelColor(rec.result.model)} dashed={modelDashed(rec.result.model, rec.result.kernel)}
                 label={runLabel(rec.result)} selected={rec.key === selectedKey} onClick={() => onSelect(rec.key)} />
             ))}
@@ -258,6 +275,7 @@ export function KpCompareCard({
             </button>
           </div>
           <div className="tablewrap">
+            {pair ? <PairTable rows={rows} selectedBase={selectedBase} onSelect={onSelect} /> : (
             <table>
               <thead>
                 <tr>
@@ -289,10 +307,71 @@ export function KpCompareCard({
                 })}
               </tbody>
             </table>
+            )}
           </div>
         </>
       )}
     </Card>
+  );
+}
+
+/** Legend key for a pair: the +a line in the model colour, the −a line in its tint. */
+function PairSwatch({ model, dashed }: { model: RunRecord['result']['model']; dashed: boolean }) {
+  return (
+    <span className="pair-swatch" aria-hidden="true">
+      <span className={`sw ${dashed ? 'dash' : ''}`} style={{ ['--c' as string]: modelColor(model, 1) }} />+a
+      <span className={`sw ${dashed ? 'dash' : ''}`} style={{ ['--c' as string]: modelColor(model, -1) }} />−a
+    </span>
+  );
+}
+
+/** One row per model: the stop times at +a and −a and their ratio. */
+function PairTable({ rows, selectedBase, onSelect }: {
+  rows: ReturnType<typeof pairRows>;
+  selectedBase: string | null;
+  onSelect: (key: string) => void;
+}) {
+  const cell = (rec?: RunRecord) => {
+    if (!rec) return <span className="muted">not run</span>;
+    const r = rec.result;
+    if (r.dtTarget_s == null) {
+      const tv = terminationVerdict(r);
+      return <Badge tone={tv.tone} title={tv.title}>{tv.text}</Badge>;
+    }
+    const t = time(r.dtTarget_s);
+    return `${t.value} ${t.unit}`;
+  };
+  return (
+    <table>
+      <thead>
+        <tr>
+          <th>Model</th>
+          <th className="n">{signLabel(1)}</th>
+          <th className="n">{signLabel(-1)}</th>
+          <th className="n" title="Stop time at −a over the stop time at +a">t₋/t₊</th>
+          <th>Accuracy</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row) => {
+          const r = (row.plus ?? row.minus)!.result;
+          const tp = row.plus?.result.dtTarget_s, tm = row.minus?.result.dtTarget_s;
+          const ratio = tp != null && tm != null ? tm / tp : null;
+          const even = row.plus?.mirrored || row.minus?.mirrored;
+          return (
+            <tr key={row.key} onClick={() => onSelect(row.key)} style={{ cursor: 'pointer' }}>
+              <td className="model-cell"><LegendItem color={modelColor(r.model)} dashed={modelDashed(r.model, r.kernel)} label={runLabel(r)} selected={row.key === selectedBase} /></td>
+              <td className="n">{cell(row.plus)}</td>
+              <td className="n">{cell(row.minus)}</td>
+              <td className="n" title={even ? 'The bare equation is even in a: one run stands for both signs.' : undefined}>
+                {even ? 'even in a' : ratio != null ? ratio.toFixed(4) : 'n/a'}
+              </td>
+              <td>{PRECISION[r.accuracy].label}</td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
   );
 }
 
@@ -319,10 +398,23 @@ export function isolatedSpikes(y: ArrayLike<number>): boolean[] {
   return out;
 }
 
-/** Keep one record per model and kernel, preferring the requested accuracy. */
-export function compatibleRuns(records: Record<string, RunRecord>, fingerprint: string | null): RunRecord[] {
+/** The runs of this setup at the signs of a in view, ordered by model, statistics, then +a before −a. */
+export function compatibleRuns(records: Record<string, RunRecord>, fingerprint: string | null, signs: Sign[]): RunRecord[] {
   if (!fingerprint) return [];
-  const list = Object.values(records).filter((r) => r.fingerprint === fingerprint);
-  const order = (r: RunRecord) => MODELS.findIndex((m) => m.id === r.result.model) * 2 + (r.result.kernel === 'quantum' ? 1 : 0);
+  const list = Object.values(records).filter((r) => r.fingerprint === fingerprint && signs.includes(signOfKey(r.key)));
+  const order = (r: RunRecord) => (MODELS.findIndex((m) => m.id === r.result.model) * 2 + (r.result.kernel === 'quantum' ? 1 : 0)) * 2
+    + (signOfKey(r.key) > 0 ? 0 : 1);
   return list.sort((a, b) => order(a) - order(b));
+}
+
+/** Runs grouped into ±a pairs: one entry per model, statistics and accuracy. */
+export function pairRows(records: RunRecord[]): Array<{ key: string; plus?: RunRecord; minus?: RunRecord }> {
+  const rows = new Map<string, { key: string; plus?: RunRecord; minus?: RunRecord }>();
+  for (const rec of records) {
+    const base = keyAtSign(rec.key, 1);
+    const row = rows.get(base) ?? { key: base };
+    if (signOfKey(rec.key) > 0) row.plus = rec; else row.minus = rec;
+    rows.set(base, row);
+  }
+  return [...rows.values()];
 }

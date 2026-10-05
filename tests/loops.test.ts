@@ -6,10 +6,13 @@
  * Gaussian shell q(k) ∝ exp[−(k − 2)²/(2·0.28²)] at k_ξ = 0.3 μm⁻¹, i.e. in
  * p = kξ units a Gaussian at p₀ = 20/3 with σ = 0.28/0.3, normalised on
  * [0.01, ∞). With N_cal = 2 the solver occupation is f = q_p/p².
+ * The dressing ratios of heuristics B and C come from the continuum reference in analysis/reference/, which
+ * reproduces the other three columns to 3 × 10⁻⁴.
  */
 
 import { logarithmicGrid } from '../src/physics/grid';
-import { buildGeometry } from '../src/physics/collision';
+import { buildGeometry, treePrefactor } from '../src/physics/collision';
+import { leggauss } from '../src/physics/quadrature';
 import { buildChannelGeometry } from '../src/physics/channels';
 import {
   buildLoopOperator, chi0, createLoopState, evalH, imLminus, imLplus, makeLoopEvaluators, reLminus, reLplus, updateLoopState,
@@ -116,13 +119,20 @@ const grid = logarithmicGrid(0.01, P_MAX_REF, 500);
 const f = occupation(grid);
 const op = buildLoopOperator(grid, 1000);
 const REF: Record<string, number[][]> = {
-  '1': [[0.81966, 0.96714, 0.87778], [0.90198, 0.96434, 0.86730], [0.83647, 0.96612, 0.87414], [0.80001, 0.96613, 0.87517], [0.84750, 0.96573, 0.87237]],
-  '-1': [[1.18034, 1.03457, 1.14983], [1.09802, 1.03749, 1.16201], [1.16353, 1.03568, 1.15477], [1.19999, 1.03587, 1.15714], [1.15250, 1.03601, 1.15570]],
+  '1': [
+    [0.81966, 0.96714, 0.87778, 0.84153, 0.94047], [0.90198, 0.96434, 0.86730, 0.90488, 0.93540],
+    [0.83647, 0.96612, 0.87414, 0.85444, 0.93865], [0.80001, 0.96613, 0.87517, 0.82623, 0.93882],
+    [0.84750, 0.96573, 0.87237, 0.86303, 0.93789],
+  ],
+  '-1': [
+    [1.18034, 1.03457, 1.14983, 1.20827, 1.06540], [1.09802, 1.03749, 1.16201, 1.09923, 1.07084],
+    [1.16353, 1.03568, 1.15477, 1.18583, 1.06750], [1.19999, 1.03587, 1.15714, 1.23448, 1.06804],
+    [1.15250, 1.03601, 1.15570, 1.17139, 1.06808],
+  ],
 };
 const IDX = [375, 393, 407, 419, 428];
-const MODELS = ['one-loop', 'chain', 'heuristic-a', 'heuristic'] as const;
-/** models with independent reference ratios in REF (columns in MODELS order) */
-const REF_MODELS = 3;
+/** columns of REF */
+const MODELS = ['one-loop', 'chain', 'heuristic-a', 'heuristic-b', 'heuristic-c'] as const;
 
 for (const [label, quad, tol] of [
   ['parity quadrature', { nqLow: 16, nqHigh: 16, panels: 1 }, 5e-3],
@@ -134,12 +144,68 @@ for (const [label, quad, tol] of [
   makeBarePartial(geom, 'classical', NCAL)(f, bare);
   for (const sign of [1, -1]) {
     let worst = 0;
-    for (let m = 0; m < REF_MODELS; m++) {
+    for (let m = 0; m < MODELS.length; m++) {
       const out = new Float64Array(grid.length);
       makeLoopPartial({ model: MODELS[m], geom, channels: ch, loopOp: op, ncal: NCAL, sign, sNodes: 4 })(f, out);
       IDX.forEach((i, r) => { worst = Math.max(worst, Math.abs(out[i] / bare[i] - REF[String(sign)][r][m])); });
     }
-    check(`${label}, a ${sign > 0 ? '> 0' : '< 0'}: one loop, chain, heuristic A`, worst <= tol, `max |Δ| = ${worst.toExponential(2)} (tol ${tol})`);
+    check(`${label}, a ${sign > 0 ? '> 0' : '< 0'}: one loop, chain, heuristics A, B and C`, worst <= tol, `max |Δ| = ${worst.toExponential(2)} (tol ${tol})`);
+  }
+}
+
+section('Heuristic B near its pole: joint s-t average');
+{
+  // At 3× the reference coupling (a < 0) the weights 1/|1 − Z|² reach ≈ 4. The solver's joint average
+  // (Q by cells, the s-channel angle by the midpoint rule) is compared with a direct average of the
+  // same events: 24 Gauss points in P, and for each P the dihedral angle φ, with Q² = A − B cos φ,
+  // on 64 midpoints, evaluating the loops afresh at every point.
+  const sign = -1, scale = 3, cp = (sign * scale) / NCAL;
+  const ev = makeLoopEvaluators(op);
+  ev.update(f);
+  const G = leggauss(24), NPHI = 64;
+  for (const i of [407, 419]) {
+    const geom = buildGeometry(grid, P_MAX_REF / Math.SQRT2, { nqLow: 16, nqHigh: 16, panels: 2 }, { stride: grid.length, offset: i });
+    const out = new Float64Array(grid.length);
+    makeLoopPartial({ model: 'heuristic-b', geom, channels: buildChannelGeometry(geom, 0.2, 64), loopOp: op, ncal: NCAL, sign, sNodes: 4, loopScale: scale })(f, out);
+    const { weight, i1, a1, i2, a2, i3, a3, p2: p2e, targetPairs, pairOffsets, pairP1 } = geom;
+    const p = grid[i], pSq = p * p, fp = f[i];
+    const at = (j: number, u: number) => (1 - u) * f[j] + u * f[j + 1];
+    let joint = 0, product = 0;
+    for (let k = targetPairs[i]; k < targetPairs[i + 1]; k++) {
+      const p1 = pairP1[k], w = Math.abs(pSq - p1 * p1);
+      for (let e = pairOffsets[k]; e < pairOffsets[k + 1]; e++) {
+        const f1 = at(i1[e], a1[e]), f2 = at(i2[e], a2[e]), f3 = at(i3[e], a3[e]);
+        const rate = weight[e] * (f1 * f2 * (fp + f3) - fp * f3 * (f1 + f2));
+        const q2 = p2e[e], p3Sq = Math.max(p1 * p1 + q2 * q2 - pSq, 0), p3 = Math.sqrt(p3Sq);
+        const lo = Math.max(Math.abs(p - p3), Math.abs(p1 - q2)), hi = Math.min(p + p3, p1 + q2);
+        const qa = Math.max(Math.abs(p - p1), Math.abs(q2 - p3)), qb = Math.min(p + p1, q2 + p3);
+        const weightAt = (P: number, Q: number) => {
+          const Qc = Math.max(Q, 1e-12);
+          const re = cp * ev.lPlus(P, pSq + p3Sq) + 2 * cp * ev.lMinusRe(Qc, w);
+          const im = 2 * Math.PI * cp * ev.lMinusIm(Qc, w);
+          return 1 / ((1 - re) ** 2 + im * im);
+        };
+        let mJ = 0, mP = 0;
+        for (let a = 0; a < G.x.length; a++) {
+          const P = 0.5 * (lo + hi) + 0.5 * (hi - lo) * G.x[a];
+          const aPar = (pSq + P * P - p3Sq) / (2 * P), bPar = (p1 * p1 + P * P - q2 * q2) / (2 * P);
+          const A = pSq + p1 * p1 - 2 * aPar * bPar;
+          const B = 2 * Math.sqrt(Math.max(pSq - aPar ** 2, 0) * Math.max(p1 * p1 - bPar ** 2, 0));
+          let sj = 0;
+          for (let m = 0; m < NPHI; m++) sj += weightAt(P, Math.sqrt(Math.max(A - B * Math.cos(((m + 0.5) * Math.PI) / NPHI), 0)));
+          mJ += (0.5 * G.w[a] * sj) / NPHI;
+          let sp = 0;
+          for (let b = 0; b < G.x.length; b++) sp += 0.5 * G.w[b] * weightAt(P, 0.5 * (qa + qb) + 0.5 * (qb - qa) * G.x[b]);
+          mP += 0.5 * G.w[a] * sp;
+        }
+        joint += rate * mJ;
+        product += rate * mP;
+      }
+    }
+    joint *= treePrefactor(NCAL);
+    product *= treePrefactor(NCAL);
+    relClose(`p = ${p.toFixed(3)}: solver = direct joint average`, out[i], joint, 1e-3);
+    note(`  joint − product measure: ${((joint - product) / joint).toExponential(2)} (relative)`);
   }
 }
 
@@ -175,7 +241,7 @@ section('Model identities');
   // First order: chain → 1 + 2 Re L₋, heuristic A → 1 + 8 Re L₋,
   // heuristic B → 1 + 2 Re L₊ + 8 Re L₋ (the one-loop bracket).
   const eps = 1e-3;
-  const dc = run('chain', 1, eps).out, dh = run('heuristic', 1, eps).out, dl = run('one-loop', 1, eps).out;
+  const dc = run('chain', 1, eps).out, dh = run('heuristic-b', 1, eps).out, dl = run('one-loop', 1, eps).out;
   const da = run('heuristic-a', 1, eps).out;
   let na = 0, nc = 0;
   for (let i = 0; i < n; i++) { na += Math.abs(da[i] - bare[i]); nc += Math.abs(dc[i] - bare[i]); }
@@ -225,12 +291,12 @@ section('Model identities');
   }
 
   // Partitioned loop right-hand sides add up to the full one.
-  const full = run('heuristic', -1).out;
+  const full = run('heuristic-b', -1).out;
   const summed = new Float64Array(n);
   for (let off = 0; off < 3; off++) {
     const g = buildGeometry(grid, P_MAX_REF / Math.SQRT2, { nqLow: 12, nqHigh: 12, panels: 1 }, { stride: 3, offset: off });
     const out = new Float64Array(n);
-    makeLoopPartial({ model: 'heuristic', geom: g, channels: buildChannelGeometry(g, 0.2, 64), loopOp: op, ncal: NCAL, sign: -1, sNodes: 4 })(f, out);
+    makeLoopPartial({ model: 'heuristic-b', geom: g, channels: buildChannelGeometry(g, 0.2, 64), loopOp: op, ncal: NCAL, sign: -1, sNodes: 4 })(f, out);
     for (let i = 0; i < n; i++) summed[i] += out[i];
   }
   const dp = maxDiff(full, summed) / Math.max(...Array.from(full, Math.abs));
@@ -266,7 +332,7 @@ section('Model identities');
     const beChain = Math.max(...Array.from(runQ('chain', 1, be), Math.abs));
     check('chain, Bose +1: Bose-Einstein residual stays at the bare discretisation level', beChain < 3 * beScale,
       `${beChain.toExponential(2)} vs bare ${beScale.toExponential(2)}`);
-    for (const model of ['one-loop', 'heuristic'] as const) {
+    for (const model of ['one-loop', 'heuristic-b'] as const) {
       let threw = false;
       try { makeLoopPartial({ model, geom, channels: ch, loopOp: op, ncal: NCAL, sign: -1, sNodes: 4, kernel: 'quantum' }); } catch { threw = true; }
       check(`${model}: the Bose +1 kernel is refused`, threw, threw ? 'throws' : 'accepted');
@@ -274,14 +340,14 @@ section('Model identities');
   }
 
   // Diagnostics and the pole alarm.
-  const weak = makeLoopRhs({ model: 'heuristic', geom, channels: ch, loopOp: op, ncal: NCAL, sign: -1, sNodes: 4 });
+  const weak = makeLoopRhs({ model: 'heuristic-b', geom, channels: ch, loopOp: op, ncal: NCAL, sign: -1, sNodes: 4 });
   const dWeak = weak(f, new Float64Array(n)) as RhsDiagnostics;
-  check('reference coupling is far from the pole', dWeak.stop === null && dWeak.poleIndicator < 2,
-    `1/min|1 − 4L|² = ${dWeak.poleIndicator.toFixed(3)}`);
+  check('reference coupling is far from the pole', dWeak.stop === null && dWeak.poleIndicator < 2 && dWeak.poleShare === 0,
+    `1/min|1 − 4L|² = ${dWeak.poleIndicator.toFixed(3)}, rate share at the pole ${dWeak.poleShare}`);
   check('collision-weighted dressing is positive for a < 0', dWeak.loopDressing > 0.1, `${dWeak.loopDressing.toFixed(4)}`);
-  const strong = makeLoopRhs({ model: 'heuristic', geom, channels: ch, loopOp: op, ncal: NCAL, sign: -1, sNodes: 4, loopScale: 12 });
+  const strong = makeLoopRhs({ model: 'heuristic-b', geom, channels: ch, loopOp: op, ncal: NCAL, sign: -1, sNodes: 4, loopScale: 12 });
   const dStrong = strong(f, new Float64Array(n)) as RhsDiagnostics;
-  check('strong attractive coupling trips the pole alarm', dStrong.stop !== null, `1/min|1 − 4L|² = ${dStrong.poleIndicator.toFixed(1)}`);
+  check('strong attractive coupling trips the pole alarm', dStrong.stop !== null, `rate share at the pole ${(100 * dStrong.poleShare).toFixed(1)}%, largest sampled weight ${dStrong.poleIndicator.toFixed(1)}`);
   const oneLoopStrong = makeLoopRhs({ model: 'one-loop', geom, channels: ch, loopOp: op, ncal: NCAL, sign: 1, sNodes: 4, loopScale: 12 });
   const d1 = oneLoopStrong(f, new Float64Array(n)) as RhsDiagnostics;
   check('strong repulsive coupling turns the one-loop bracket negative and stops', d1.stop !== null, `M_min = ${d1.poleIndicator.toFixed(2)}`);
@@ -316,17 +382,20 @@ section('Models end to end (Draft, one-component gas)');
   const bare = await t('bare', 50);
   const chain = await t('chain', -50);
   const heur = await t('heuristic-a', -50);
-  const heurB = await t('heuristic', -50);
+  const heurB = await t('heuristic-b', -50);
+  // at −150 a₀ the attractive dressing of heuristic A exceeds 10 on more than 1% of the rate early on
+  const heurStrong = await t('heuristic-a', -150);
   check('one loop at 50 a₀ stops cleanly when the bracket turns negative', oneStrong.termination === 'pole',
     `${oneStrong.termination} at k_p/k_p,0 = ${(oneStrong.kpTrack.kp.at(-1)! / oneStrong.kp0_um_inv).toFixed(3)}`);
-  for (const r of [bare25, oneRep, oneAtt, bare, chain, heur]) {
+  for (const r of [bare25, oneRep, oneAtt, bare, chain, heur, heurB]) {
     check(`${r.model} (a ${r.scales.sign > 0 ? '> 0' : '< 0'}) reaches the target`, r.termination === 'target', `${r.termination} ${r.terminationMessage ?? ''}`);
   }
   check('repulsion slows the one-loop relaxation', oneRep.dtTarget_s! > bare25.dtTarget_s!,
     `${(oneRep.dtTarget_s! / bare25.dtTarget_s!).toFixed(4)} × bare`);
   check('attraction speeds up the one-loop relaxation', oneAtt.dtTarget_s! < bare25.dtTarget_s!,
     `${(oneAtt.dtTarget_s! / bare25.dtTarget_s!).toFixed(4)} × bare`);
-  check('heuristic B at −50 a₀ runs into its pole and stops cleanly', heurB.termination === 'pole', `${heurB.termination}`);
+  check('heuristic A at −150 a₀ runs into its pole and stops cleanly', heurStrong.termination === 'pole' && heurStrong.terminationMessage !== null,
+    `${heurStrong.termination} at k_p/k_p,0 = ${(heurStrong.kpTrack.kp.at(-1)! / heurStrong.kp0_um_inv).toFixed(3)}: ${heurStrong.terminationMessage}`);
   check('attraction speeds up heuristic A', heur.dtTarget_s! < bare.dtTarget_s!,
     `${(heur.dtTarget_s! / bare.dtTarget_s!).toFixed(4)} × bare`);
   note(`  t/t_bare: one loop at ±25 a₀ ${(oneRep.dtTarget_s! / bare25.dtTarget_s!).toFixed(4)} / ${(oneAtt.dtTarget_s! / bare25.dtTarget_s!).toFixed(4)}; at −50 a₀ chain −a ${(chain.dtTarget_s! / bare.dtTarget_s!).toFixed(4)}; heuristic −a ${(heur.dtTarget_s! / bare.dtTarget_s!).toFixed(4)}`);

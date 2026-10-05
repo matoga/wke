@@ -6,19 +6,21 @@ import { Card, LegendItem } from '../ui/primitives';
 import { Plot } from './Plot';
 import type { Series } from './Plot';
 import { fmt } from '../ui/format';
-import { modelColor, modelDashed, runLabel } from '../ui/runView';
+import { modelDashed, runColor, runLabel } from '../ui/runView';
 import type { RunRecord } from '../state/useRunLibrary';
 
-export function OccupationCard({ records }: {
+export function OccupationCard({ records, pair }: {
   records: RunRecord[];
+  /** both signs of a are in view: −a runs are tinted */
+  pair: boolean;
 }) {
   const loops = records.filter((rec) => rec.result.model !== 'bare');
   const series: Series[] = loops.map((rec) => ({
     id: rec.key,
-    label: runLabel(rec.result),
+    label: runLabel(rec.result, pair),
     x: rec.result.kpTrack.t_s.map((t) => t * 1e3),
     y: rec.result.kpTrack.loop,
-    color: modelColor(rec.result.model),
+    color: runColor(rec.result, pair),
     dashed: modelDashed(rec.result.model, rec.result.kernel),
   }));
   const body = loops.length === 0 ? (

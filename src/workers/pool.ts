@@ -1,6 +1,9 @@
 /**
  * A pool of compute workers that split the collision sum by target. Each
  * worker owns targets i ≡ w (mod K); the partial right-hand sides add up.
+ * Several prepared models ("slots") can live side by side, so that two runs
+ * (the signs of a ±a pair) integrate at once on the same threads; they share
+ * each worker's grid and tables, which do not depend on the model.
  */
 
 import type { EngineSpec } from '../physics/engine';
@@ -9,11 +12,13 @@ import { combinePartials, emptyPartial, finalizeDiagnostics, loopRung } from '..
 import type { RhsDiagnostics, RhsPartial } from '../physics/rhs';
 
 export type ComputeRequest =
-  | { type: 'setup'; id: number; spec: EngineSpec }
-  | { type: 'rhs'; id: number; f: Float64Array };
+  | { type: 'setup'; id: number; slot: number; spec: EngineSpec }
+  | { type: 'rhs'; id: number; slot: number; f: Float64Array }
+  | { type: 'release'; id: number; slot: number };
 
 export type ComputeResponse =
   | { type: 'ready'; id: number; nEvents: number; setup_ms: number }
+  | { type: 'released'; id: number }
   | { type: 'rhs'; id: number; out: Float64Array; part: RhsPartial }
   | { type: 'error'; id: number; message: string };
 
@@ -23,8 +28,8 @@ export class ComputePool {
   private workers: Worker[];
   private pending: Array<Map<number, Pending>>;
   private nextId = 1;
-  private kind: ReturnType<typeof rhsKind> = 'bare';
-  private rung = 1;
+  private nextSlot = 1;
+  private slots = new Map<number, { kind: ReturnType<typeof rhsKind>; rung: number }>();
 
   private constructor(workers: Worker[]) {
     this.workers = workers;
@@ -69,13 +74,17 @@ export class ComputePool {
     });
   }
 
-  async prepare(spec: Omit<EngineSpec, 'partition'>): Promise<{ nEvents: number; setup_ms: number }> {
+  /** A new slot id for one prepared model. */
+  newSlot(): number {
+    return this.nextSlot++;
+  }
+
+  async prepare(spec: Omit<EngineSpec, 'partition'>, slot: number): Promise<{ nEvents: number; setup_ms: number }> {
     const K = this.workers.length;
     const replies = await Promise.all(this.workers.map((_, i) => this.send(i, {
-      type: 'setup', id: this.nextId++, spec: { ...spec, partition: { stride: K, offset: i } },
+      type: 'setup', id: this.nextId++, slot, spec: { ...spec, partition: { stride: K, offset: i } },
     })));
-    this.kind = rhsKind(spec.model);
-    this.rung = loopRung(spec.model);
+    this.slots.set(slot, { kind: rhsKind(spec.model), rung: loopRung(spec.model) });
     let nEvents = 0, setup = 0;
     for (const r of replies) {
       if (r.type === 'ready') { nEvents += r.nEvents; setup = Math.max(setup, r.setup_ms); }
@@ -83,9 +92,11 @@ export class ComputePool {
     return { nEvents, setup_ms: setup };
   }
 
-  async rhs(f: Float64Array, out: Float64Array): Promise<RhsDiagnostics> {
+  async rhs(f: Float64Array, out: Float64Array, slot: number): Promise<RhsDiagnostics> {
+    const s = this.slots.get(slot);
+    if (!s) throw new Error('compute pool used before setup');
     const replies = await Promise.all(this.workers.map((_, i) => this.send(i, {
-      type: 'rhs', id: this.nextId++, f,
+      type: 'rhs', id: this.nextId++, slot, f,
     })));
     out.fill(0);
     let part = emptyPartial();
@@ -95,7 +106,13 @@ export class ComputePool {
       for (let j = 0; j < out.length; j++) out[j] += o[j];
       part = combinePartials(part, r.part);
     }
-    return finalizeDiagnostics(this.kind, this.rung, part);
+    return finalizeDiagnostics(s.kind, s.rung, part);
+  }
+
+  /** Drop a slot's prepared model in every worker. */
+  release(slot: number): void {
+    this.slots.delete(slot);
+    this.workers.forEach((_, i) => { void this.send(i, { type: 'release', id: this.nextId++, slot }).catch(() => {}); });
   }
 
   terminate(): void {

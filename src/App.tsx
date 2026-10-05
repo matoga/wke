@@ -3,7 +3,7 @@ import { AppHeader } from './components/AppHeader';
 import { SpectrumCard } from './components/SpectrumCard';
 import { ResultCard } from './components/ResultCard';
 import type { FrameView, ScaleSummary } from './components/ResultCard';
-import { SetupCard } from './components/SetupCard';
+import { SetupCard, visibleModels } from './components/SetupCard';
 import { KpCompareCard, compatibleRuns } from './components/KpCompareCard';
 import { OccupationCard } from './components/OccupationCard';
 import { InitialStateCard } from './components/InitialStateCard';
@@ -16,10 +16,10 @@ import { useRunLibrary } from './state/useRunLibrary';
 import type { RunJob, RunRecord, RunSetup } from './state/useRunLibrary';
 import { normSpec } from './ui/norm';
 import type { NormMode } from './ui/norm';
-import { MODELS } from './physics/models';
 import type { ModelId } from './physics/models';
 import { SPECIES, BOHR_RADIUS_UM, HBAR_JS } from './physics/constants';
 import { computeScales } from './physics/scales';
+import { keyAtSign, signOfKey } from './types/wke';
 
 export default function App() {
   const system = useSystemParameters();
@@ -29,32 +29,46 @@ export default function App() {
   const { derived, inputs } = system;
   const { settings } = sim;
 
+  const pair = derived.signs.length > 1;
   const stopValid = settings.stopKpFraction >= 0.01 && settings.stopKpFraction < 0.99;
   const runBlocker = derived.errors[0] ?? (stopValid ? null : 'The stop target must lie between 0.01 and 0.99.');
 
   const setup: RunSetup | null = useMemo(() => {
     if (runBlocker || derived.density_um3 == null || derived.a_a0 == null) return null;
+    const aAbs = Math.abs(derived.a_a0);
     return {
-      fingerprint: [source.fingerprint, derived.density_um3, derived.a_a0, inputs.speciesKey, settings.stopKpFraction].join('|'),
+      // |a|, not a: both signs of a belong to one setup and can be compared
+      fingerprint: [source.fingerprint, derived.density_um3, aAbs, inputs.speciesKey, settings.stopKpFraction].join('|'),
       q: Array.from(source.spectrum.q),
       density_um3: derived.density_um3,
-      a_a0: derived.a_a0,
+      aAbs_a0: aAbs,
+      signs: derived.signs,
       speciesKey: inputs.speciesKey,
       stopKpFraction: settings.stopKpFraction,
     };
   }, [runBlocker, derived, source.fingerprint, source.spectrum, inputs.speciesKey, settings.stopKpFraction]);
 
   const lib = useRunLibrary(setup);
-  const compared = useMemo(() => compatibleRuns(lib.records, setup?.fingerprint ?? null), [lib.records, setup]);
-  const selected: RunRecord | null = lib.selectedKey ? lib.records[lib.selectedKey] ?? null : null;
-  const stale = selected != null && selected.fingerprint !== setup?.fingerprint;
+  const compared = useMemo(() => compatibleRuns(lib.records, setup?.fingerprint ?? null, derived.signs), [lib.records, setup, derived.signs]);
+  // The selected run, shown at the sign(s) in view: the first sign, and in a pair also −a.
+  const selKey = lib.selectedKey;
+  const primaryKey = selKey == null ? null : keyAtSign(selKey, derived.signs[0]);
+  const selected: RunRecord | null = primaryKey ? lib.records[primaryKey] ?? null : null;
+  const partner: RunRecord | null = pair && selKey ? lib.records[keyAtSign(selKey, -1)] ?? null : null;
+  const stale = (selected ?? partner) != null && (selected ?? partner)!.fingerprint !== setup?.fingerprint;
+  const primaryLive = lib.live.find((l) => l.sign === derived.signs[0]) ?? null;
+  const partnerLive = pair ? lib.live.find((l) => l.sign < 0) ?? null : null;
+  const shownKeys = [selected?.key, partner?.key].filter((k): k is string => k != null);
 
+  /** Latest compatible classical run per model and sign, for the stop times in the model list. */
   const lastRuns = useMemo(() => {
-    const out: Partial<Record<ModelId, RunRecord>> = {};
+    const out: Partial<Record<ModelId, { plus?: RunRecord; minus?: RunRecord }>> = {};
     for (const rec of compared) {
       if (rec.result.kernel === 'quantum') continue;
-      const prev = out[rec.result.model];
-      if (!prev || rec.result.accuracy === settings.accuracy) out[rec.result.model] = rec;
+      const slot = out[rec.result.model] ??= {};
+      const side = signOfKey(rec.key) > 0 ? 'plus' : 'minus';
+      const prev = slot[side];
+      if (!prev || rec.result.accuracy === settings.accuracy) slot[side] = rec;
     }
     return out;
   }, [compared, settings.accuracy]);
@@ -87,7 +101,8 @@ export default function App() {
             <SpectrumCard
               onFrame={setFrame}
               record={selected}
-              live={lib.live}
+              live={primaryLive}
+              partner={pair ? { record: partner, live: partnerLive } : null}
               stale={stale}
               spectrum={source.spectrum}
               desc={source.descriptors}
@@ -98,14 +113,15 @@ export default function App() {
               normMode={normMode}
               onNormMode={setNormMode}
               running={lib.progress.running}
-              canContinue={selected != null && lib.canContinue(selected.key)}
-              onContinue={() => selected && lib.continueRun(selected.key)}
+              canContinue={shownKeys.length > 0 && shownKeys.every((k) => lib.canContinue(k))}
+              onContinue={() => lib.continueRuns(shownKeys)}
             />
           </div>
           <div className="slot o3">
             <KpCompareCard
               hbarOverM_um2_per_s={SPECIES[inputs.speciesKey] ? (HBAR_JS / SPECIES[inputs.speciesKey].massKg) * 1e12 : null}
               records={compared}
+              pair={pair}
               selectedKey={lib.selectedKey}
               onSelect={lib.setSelectedKey}
               stopKpFraction={settings.stopKpFraction}
@@ -128,6 +144,8 @@ export default function App() {
           <div className="slot o1">
             <ResultCard
               record={selected}
+              partner={pair ? partner : undefined}
+              aAbs_a0={setup?.aAbs_a0 ?? null}
               stale={stale}
               progress={lib.progress}
               settings={settings}
@@ -138,7 +156,7 @@ export default function App() {
               canRun={setup != null}
               runBlocker={runBlocker}
               onRun={() => lib.run([job(settings.model)])}
-              onRunAll={() => lib.run(MODELS.map((m) => job(m.id)))}
+              onRunAll={() => lib.run(visibleModels(settings.showHeuristics).map((m) => job(m.id)))}
               onCancel={lib.stop}
               onStopAndReset={() => { lib.cancel(); lib.clear(); }}
             />
@@ -151,13 +169,14 @@ export default function App() {
               derived={derived}
               onInputs={system.update}
               lastRuns={lastRuns}
+              pair={pair}
             />
           </div>
           <div className="slot o5">
-            <OccupationCard records={compared} />
+            <OccupationCard records={compared} pair={pair} />
           </div>
           <div className="slot o7">
-            <ExportCard spectrum={source.spectrum} atomNumber={derived.N} selected={selected} compared={compared} />
+            <ExportCard spectrum={source.spectrum} atomNumber={derived.N} shown={[selected, partner].filter((x): x is RunRecord => x != null)} compared={compared} />
           </div>
         </div>
       </div>

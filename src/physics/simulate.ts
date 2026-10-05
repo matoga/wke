@@ -9,7 +9,7 @@ import { trapezoidWeights } from './collision';
 import { computeScales } from './scales';
 import { peakMomentumFromF, INPUT_GRID } from './descriptors';
 import { buildInitialF, runWKE } from './integrator';
-import type { IntegrationResult, Snapshot } from './integrator';
+import type { IntegrationConfig, IntegrationResult, Snapshot } from './integrator';
 import { SolverEngine } from './engine';
 import type { EngineSpec, PreparedModel } from './engine';
 import { completeRhs } from './rhs';
@@ -17,7 +17,7 @@ import type { RhsDiagnostics, RhsFunction } from './rhs';
 import { SPECIES, DEFAULT_SPECIES_KEY, P_MIN, solverPMax } from './constants';
 import { PRECISION } from './precision';
 import { MODEL_BY_ID } from './models';
-import { runKeyOf } from '../types/wke';
+import { runKeyOf, signOf } from '../types/wke';
 import type { WKEContinueRequest, WKELive, WKEProgress, WKEResult, WKERunRequest } from '../types/wke';
 
 export type BackendSpec = Omit<EngineSpec, 'partition'>;
@@ -26,11 +26,19 @@ export interface SimulationBackend {
   threads: number;
   prepare(spec: BackendSpec): Promise<{ nEvents: number; setup_ms: number }>;
   rhs: RhsFunction;
+  /**
+   * A further backend on the same threads with its own prepared model, so that several runs (the two
+   * signs of a pair) integrate at once. Grids and tables that do not depend on the model are shared.
+   */
+  view(): SimulationBackend;
+  /** frees what this view prepared */
+  release(): void;
 }
 
 /** Single-thread backend (tests, and browsers without nested workers). */
 export function localBackend(engine = new SolverEngine()): SimulationBackend {
-  let rhs: RhsFunction = () => { throw new Error('backend not prepared'); };
+  const unprepared: RhsFunction = () => { throw new Error('backend not prepared'); };
+  let rhs = unprepared;
   return {
     threads: 1,
     async prepare(spec) {
@@ -39,6 +47,8 @@ export function localBackend(engine = new SolverEngine()): SimulationBackend {
       return { nEvents: prepared.nEvents, setup_ms: prepared.setup_ms };
     },
     rhs: (f, out) => rhs(f, out),
+    view: () => localBackend(engine),
+    release: () => { rhs = unprepared; },
   };
 }
 
@@ -69,7 +79,7 @@ function liveAdapter(
   const kernel = MODEL_BY_ID[request.model].allowsQuantum ? request.kernel : 'classical';
   const grid = Array.from(k_um_inv);
   return (snapshot: Snapshot, stride: number) => onProgress({
-    type: 'live', runId, runKey: runKeyOf(request.model, kernel, request.accuracy),
+    type: 'live', runId, runKey: runKeyOf(request.model, kernel, request.accuracy, signOf(request.a_a0)),
     continuation, model: request.model, kernel,
     k_um_inv: grid, kp0_um_inv: kp0, stopKpFraction,
     density_um3: request.density_um3,
@@ -95,7 +105,7 @@ function packResult(
   return {
     type: 'result',
     runId,
-    runKey: runKeyOf(req.model, kernel, req.accuracy),
+    runKey: runKeyOf(req.model, kernel, req.accuracy, signOf(req.a_a0)),
     model: req.model,
     kernel,
     accuracy: req.accuracy,
@@ -122,7 +132,7 @@ function packResult(
     })),
     latticeStride: res.latticeStride,
     breakdown: res.breakdown ? { t_s: res.breakdown.t_s, message: res.breakdown.message } : null,
-    kpTrack: { t_s: res.kpTrack.t_s, kp: res.kpTrack.kp, loop: res.kpTrack.loop, pole: res.kpTrack.pole },
+    kpTrack: { t_s: res.kpTrack.t_s, kp: res.kpTrack.kp, loop: res.kpTrack.loop, pole: res.kpTrack.pole, share: res.kpTrack.share },
     evalTrack: { t_s: res.evalTrack.t_s, kp: res.evalTrack.kp },
     scales,
     nSteps: res.nSteps,
@@ -150,15 +160,19 @@ function progressAdapter(runId: string, onProgress: ProgressFn | undefined, t0_s
     nSteps: info.nSteps,
     loopDressing: info.diag.loopDressing,
     poleIndicator: info.diag.poleIndicator,
+    poleShare: info.diag.poleShare,
     elapsed_ms: performance.now() - wall0,
   });
 }
+
+export type PairHold = NonNullable<IntegrationConfig['hold']>;
 
 export async function runSimulation(
   req: WKERunRequest,
   backend: SimulationBackend,
   onProgress?: ProgressFn,
   shouldStop?: () => boolean,
+  hold?: PairHold,
 ): Promise<{ result: WKEResult; context: RunContext }> {
   const wall0 = performance.now();
   const info = MODEL_BY_ID[req.model];
@@ -208,6 +222,7 @@ export async function runSimulation(
     onLive: liveAdapter(req.runId, req, false, k_um_inv, kp0, req.stopKpFraction, onProgress),
     shouldStop,
     stopAtBreakdown: req.stopAtBreakdown ?? true,
+    hold,
   });
 
   const result = packResult(req.runId, req, false, res, k_um_inv, kp0, req.stopKpFraction, scales, setup, backend.threads, gridCoverage);
@@ -235,6 +250,7 @@ export async function continueSimulation(
   backend: SimulationBackend,
   onProgress?: ProgressFn,
   shouldStop?: () => boolean,
+  hold?: PairHold,
 ): Promise<{ result: WKEResult; context: RunContext }> {
   const wall0 = performance.now();
   const level = PRECISION[ctx.request.accuracy];
@@ -247,20 +263,27 @@ export async function continueSimulation(
     xi_um: ctx.scales.xi_um,
     kp0_um_inv: req.kp0_um_inv,
     f0: ctx.finalF,
-    // The accepted-step budget, not elapsed time, ends a continuation. A
-    // continuation that starts before the target still stops there.
-    tauMax: Infinity,
+    // The accepted-step budget, not elapsed time, ends a continuation; a pair
+    // continues to a common time instead. A continuation that starts before
+    // the target still stops there (a pair's runs then wait for each other).
+    tauMax: req.untilT_s != null ? Math.max(0, req.untilT_s / ctx.scales.t0_s - ctx.tauEnd) : Infinity,
     rtol: level.rtol,
     atol: level.atol,
     haltOnHalf: !req.alreadyReachedTarget,
     stopKpFraction: req.stopKpFraction,
     nSnapshots: req.nSnapshots,
     lattice: { offsetTau: ctx.tauEnd, stride: ctx.latticeStride },
-    maxSteps: ctx.nSteps,
+    maxSteps: req.untilT_s != null ? undefined : ctx.nSteps,
     onProgress: progressAdapter(req.runId, onProgress, ctx.scales.t0_s, wall0),
     onLive: liveAdapter(req.runId, ctx.request, true, ctx.k_um_inv, req.kp0_um_inv, req.stopKpFraction, onProgress),
     shouldStop,
     stopAtBreakdown: ctx.request.stopAtBreakdown ?? true,
+    // the segment counts τ from its start; the pair compares absolute τ
+    hold: hold && {
+      onTarget: (t) => hold.onTarget(t + ctx.tauEnd),
+      onStep: (t) => hold.onStep(t + ctx.tauEnd),
+      bound: () => { const b = hold.bound(); return { ...b, tau: b.tau - ctx.tauEnd }; },
+    },
   });
   const result = packResult(
     req.runId, ctx.request, true, res, ctx.k_um_inv, req.kp0_um_inv, req.stopKpFraction, ctx.scales,

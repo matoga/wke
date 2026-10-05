@@ -3,7 +3,7 @@
 import { Tex } from '../ui/Tex';
 import { ACCURACY_LEVELS, LEVEL_EVENTS, PRECISION } from '../physics/precision';
 import { MODELS } from '../physics/models';
-import { NEGATIVE_WEIGHT_LIMIT, POLE_WEIGHT_LIMIT } from '../physics/rhs';
+import { NEGATIVE_WEIGHT_LIMIT, POLE_DRESSING_LIMIT, POLE_RATE_SHARE } from '../physics/rhs';
 import { modelColor, modelDashed } from '../ui/runView';
 import { LegendItem } from '../ui/primitives';
 
@@ -12,8 +12,8 @@ const MODEL_NOTES: Record<string, string> = {
   'one-loop': 'Exact next order for a one-component gas. Odd in a: attraction speeds the cascade up, repulsion slows it down. Quantitative while the dressing |M − 1| stays small.',
   chain: 'All-order resummation of the exchange bubble chain, as in the large-N vector model, placed on the one-component tree level. Reduces to 1 + 2 Re L₋ at one loop.',
   'heuristic-a': 'Exchange chain with the one-component rung weight 4. It reproduces only the exchange part 8 Re L₋ of the one-loop term: it omits L₊ and all crossed diagrams, and the location of its pole, 4 Re L₋ = 1, is not derived.',
+  'heuristic-b': 'A minimal ansatz with one denominator for both channels, Z = Re L₊ + 4L₋ and weight 1/|1 − Z|², averaged over the joint configurations of the particle-particle and exchange channels. Its first order is exactly the one-loop bracket 1 + 2 Re L₊ + 8 Re L₋; its higher orders are heuristic, not derived, and it omits crossed diagrams. Im L₊ is left out because its interference with Im L₋ depends on the sign of Im L₋, which is fixed by the causal prescription of the exchange line, and the ansatz does not specify one.',
   'heuristic-c': 'The bubble chain with its rung weight raised from 1 to 1.85. Deep in the coherent regime the loops are large and the rates fall as 1/c², so this rescales the late dynamics by 1/3.4: c is fitted so that the late growth of the coherence length, (m/ħ) dℓ²/dt, matches the measured value ≈ 3.4 in a box of ³⁹K, with the Bose +1 terms. Fitted, not derived.',
-  heuristic: 'A minimal ansatz with one denominator for both channels, Z = Re L₊ + 4L₋ and weight 1/|1 − Z|², averaged jointly over the particle-particle and exchange channels. Its first order is exactly the one-loop bracket 1 + 2 Re L₊ + 8 Re L₋; its higher orders are heuristic, not derived, and it omits crossed diagrams.',
 };
 
 export function MethodNotes() {
@@ -36,11 +36,16 @@ export function MethodNotes() {
         <Tex math="\omega_- = \omega_4 - \omega_2" />, with <Tex math="p_{12} = |\mathbf p_1 - \mathbf p_2|" />:
       </p>
       <Tex block math={String.raw`L_+ = \frac{4\pi\lambda}{p_+}\int_0^\infty dq\, q\, n_q \ln\left|\frac{q^2 - q p_+ + \mathbf p_1\!\cdot\mathbf p_2}{q^2 + q p_+ + \mathbf p_1\!\cdot\mathbf p_2}\right| \;-\; i\,\frac{4\pi^2\lambda}{p_+}\int_{|p_+ - p_{12}|/2}^{(p_+ + p_{12})/2} dq\, q\, n_q`} />
-      <Tex block math={String.raw`L_- = \frac{2\pi\lambda}{p_-}\int_0^\infty dq\, q\, n_q \ln\left|\frac{(p_-^2 - 2p_-q)^2 - \omega_-^2}{(p_-^2 + 2p_-q)^2 - \omega_-^2}\right| \;-\; i\,\frac{2\pi^2\lambda}{p_-}\int_{|p_-^2-\omega_-|/2p_-}^{(p_-^2+\omega_-)/2p_-} dq\, q\, n_q`} />
+      <Tex block math={String.raw`L_- = \frac{2\pi\lambda}{p_-}\int_0^\infty dq\, q\, n_q \ln\left|\frac{(p_-^2 - 2p_-q)^2 - \omega_-^2}{(p_-^2 + 2p_-q)^2 - \omega_-^2}\right| \;-\; i\,\frac{2\pi^2\lambda}{p_-}\int_{\left|p_-^2-|\omega_-|\right|/2p_-}^{(p_-^2+|\omega_-|)/2p_-} dq\, q\, n_q`} />
       <p>
-        Both are odd in <Tex math="a" />. For a fixed spectral shape they scale as{' '}
+        The imaginary part of <Tex math="L_-" /> is written for <Tex math="|\omega_-|" />: with the retarded prescription
+        it would change sign with <Tex math="\omega_-" />, but every model uses it only through{' '}
+        <Tex math="(\mathrm{Im}\,L_-)^2" />, so the sign never enters. Both loops are odd in <Tex math="a" />. For a fixed spectral shape they scale as{' '}
         <Tex math="(k_\xi/k_p)^2" /> with <Tex math="k_\xi = \sqrt{8\pi n|a|}" />, so the classical dynamics depend on{' '}
-        <Tex math="n" /> and <Tex math="a" /> only through <Tex math="na" /> and the sign of <Tex math="a" />.
+        <Tex math="n" /> and <Tex math="a" /> only through <Tex math="na" /> and the sign of <Tex math="a" />. Nothing
+        else depends on the sign: the grid, the collision tables and the time unit depend on <Tex math="|a|" /> only. A ±a
+        pair therefore runs both signs on the same tables from the same state, and any difference between them comes from
+        the loops.
       </p>
 
       <h3>Models</h3>
@@ -64,7 +69,9 @@ export function MethodNotes() {
         angular configurations of the particle-particle (<Tex math="s" />) and exchange (<Tex math="t" />) channels. For
         fixed magnitudes, momentum conservation leaves the total and the transferred momentum uniformly distributed over
         an interval of length <Tex math="2\min(p_1,p_2,p_3,p_4)" />; the dressing of the resummed models is averaged
-        there as a whole, not built from an averaged loop. Crossed (non-bubble) diagrams beyond one loop are in none of
+        there as a whole, not built from an averaged loop. The two are not independent: for a fixed total momentum,
+        the transfer follows from the angle between the planes of the two pairs, which is uniform. Heuristic B, whose
+        denominator depends on both, is averaged over this joint distribution. Crossed (non-bubble) diagrams beyond one loop are in none of
         the models.
       </p>
 
@@ -111,9 +118,12 @@ export function MethodNotes() {
         <Tex math="f_{\mathbf k + \mathbf Q} - f_{\mathbf k}" />. The one-loop model and heuristic B also contain the
         pair bubble <Tex math="L_+" />, whose vacuum part is absorbed into <Tex math="a" />; they use classical wave
         statistics. A one-loop run stops when its bracket <Tex math="M" /> turns negative on more than{' '}
-        {NEGATIVE_WEIGHT_LIMIT * 100}% of the collision weight, and a resummed run stops when{' '}
-        any of its weights <Tex math="1/|1 - cL|^2" /> reaches {POLE_WEIGHT_LIMIT}: past these points the models say nothing
-        quantitative. The resummed vertices can approach their pole for repulsive gases too, because{' '}
+        {NEGATIVE_WEIGHT_LIMIT * 100}% of the collision weight, and a resummed run stops when collisions whose averaged
+        dressing <Tex math="M" /> exceeds {POLE_DRESSING_LIMIT} carry more than {POLE_RATE_SHARE * 100}% of the collision
+        rate: past these points the models say nothing quantitative. The rule uses the averaged dressings because they
+        are what the equation integrates and they converge with the table resolution. The largest sampled weight{' '}
+        <Tex math="1/|1 - cL|^2" /> is shown as well, as a diagnostic only: near a pole it depends on where the table
+        nodes fall. The resummed vertices can approach their pole for repulsive gases too, because{' '}
         <Tex math="\mathrm{Re}\,L_-" /> changes sign across the resonant configurations. Particle number and energy are
         conserved by the equation; their small drift is the discretisation error of the truncated grid and is shown with
         every run.

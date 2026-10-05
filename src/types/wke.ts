@@ -28,6 +28,8 @@ export interface WKERunRequest {
   nSnapshots: number;
   /** physical times (s) at which to report k_p from the dense output */
   tEval_s?: number[];
+  /** the ±a pair this run belongs to: its runs integrate side by side and end at a common time */
+  pair?: { id: string; size: number };
 }
 
 export interface WKEContinueRequest {
@@ -39,6 +41,9 @@ export interface WKEContinueRequest {
   kp0_um_inv: number;
   stopKpFraction: number;
   nSnapshots: number;
+  /** a pair continues to this common time (s) instead of by a step budget */
+  untilT_s?: number;
+  pair?: { id: string; size: number };
 }
 
 export interface WKECancelRequest {
@@ -62,6 +67,8 @@ export interface WKEProgress {
   nSteps?: number;
   loopDressing?: number;
   poleIndicator?: number;
+  /** rate share of collisions at the pole (resummed models) */
+  poleShare?: number;
   elapsed_ms: number;
 }
 
@@ -121,7 +128,8 @@ export interface WKEResult {
   latticeStride: number;
   /** first breakdown of the model in this segment when the run continued past it (t_s from the segment start) */
   breakdown: { t_s: number; message: string } | null;
-  kpTrack: { t_s: number[]; kp: number[]; loop: number[]; pole: number[] };
+  /** `share`: rate share of collisions at the pole per step (resummed models; absent in older runs) */
+  kpTrack: { t_s: number[]; kp: number[]; loop: number[]; pole: number[]; share?: number[] };
   evalTrack: { t_s: number[]; kp: number[] };
   scales: {
     xi_um: number;
@@ -153,6 +161,23 @@ export interface WKEError {
 
 export type WKEResponse = WKEProgress | WKELive | WKEResult | WKEError;
 
-export function runKeyOf(model: ModelId, kernel: KernelType, accuracy: AccuracyLevel): string {
-  return `${model}:${kernel}:${accuracy}`;
+/** Sign of a run: +1 repulsive, −1 attractive. */
+export type Sign = 1 | -1;
+
+export const signOf = (a_a0: number): Sign => (a_a0 < 0 ? -1 : 1);
+
+/** Identity of a run in the library and in the solver's continuation store. */
+export function runKeyOf(model: ModelId, kernel: KernelType, accuracy: AccuracyLevel, sign: Sign): string {
+  return `${model}:${kernel}:${accuracy}:${sign > 0 ? '+' : '-'}`;
 }
+
+/** The run key of the same run at the opposite sign of a. */
+export function partnerKeyOf(key: string): string {
+  return key.endsWith(':+') ? `${key.slice(0, -1)}-` : `${key.slice(0, -1)}+`;
+}
+
+/** The run key of the same run at the given sign of a. */
+export const keyAtSign = (key: string, sign: Sign): string => `${key.slice(0, -1)}${sign > 0 ? '+' : '-'}`;
+
+/** Sign of a run key. */
+export const signOfKey = (key: string): Sign => (key.endsWith(':-') ? -1 : 1);

@@ -247,16 +247,19 @@ section('System parameters');
 {
   const n = META.density_um3;
   const N = 1e5;
-  const base = { speciesKey: 'K39', L_um: null, aspect: null, density_um3: null, a_a0: 50 };
+  const base = { speciesKey: 'K39', L_um: null, aspect: null, density_um3: null, a_a0: 50, aSign: 'repulsive' as const };
   const nv = deriveSystem({ ...base, mode: 'N_V', N, V_um3: N / n });
   relClose('N, V → n', nv.density_um3!, n, 1e-12);
   relClose('N, V, a → na', nv.na_um2!, META.na_ref_um2, 1e-12);
   const cyl = deriveSystem({ ...base, mode: 'N_cylinder', N, V_um3: null, L_um: 40, aspect: 0.5 });
   relClose('cylinder V = π(ρL)²L', cyl.V_um3!, Math.PI * 20 * 20 * 40, 1e-14);
   relClose('cylinderVolume helper', cylinderVolume(40, 0.5), Math.PI * 20 * 20 * 40, 1e-14);
-  const dens = deriveSystem({ ...base, mode: 'density', N: null, V_um3: null, density_um3: n, a_a0: -50 });
-  relClose('density mode keeps the sign of a', dens.na_um2!, -META.na_ref_um2, 1e-12);
-  check('attractive a is accepted', dens.errors.length === 0, dens.errors.join('; '));
+  const dens = deriveSystem({ ...base, mode: 'density', N: null, V_um3: null, density_um3: n, aSign: 'attractive' });
+  relClose('the attractive sign gives a negative na', dens.na_um2!, -META.na_ref_um2, 1e-12);
+  check('attractive a is accepted', dens.errors.length === 0 && dens.signs.join() === '-1', dens.errors.join('; '));
+  const pair = deriveSystem({ ...base, mode: 'density', N: null, V_um3: null, density_um3: n, aSign: 'both' });
+  check('both signs: a pair of runs at ±|a|, scales from +|a|', pair.signs.join() === '1,-1' && pair.a_a0 === 50,
+    `signs ${pair.signs.join()}, a ${pair.a_a0}`);
   const zero = deriveSystem({ ...base, mode: 'density', N: null, V_um3: null, density_um3: n, a_a0: 0 });
   check('a = 0 is rejected before a run', zero.na_um2 === null && zero.errors.length === 1, zero.errors.join('; '));
 }

@@ -16,14 +16,7 @@ export function AppHeader() {
 
   return (
     <header className="top">
-      <div className="top-text">
-        <h1>Bose Gas Kinetics</h1>
-        <p className="lede">
-          Solve the isotropic <b>wave kinetic equation</b> of a three-dimensional Bose gas from any momentum spectrum, and
-          compare the bare equation with <b>loop-renormalised</b> kinetics of a one-component gas: one loop and bubble-chain resummations. Every
-          number is computed in your browser.
-        </p>
-      </div>
+      <h1>Bose Gas <span className="h1-sub">kinetic equation solver</span></h1>
       <div className="toolbar">
         <Segmented<Theme> ariaLabel="Colour theme" value={theme} onChange={setTheme}
           options={[{ id: 'auto', label: 'Auto' }, { id: 'light', label: 'Light' }, { id: 'dark', label: 'Dark' }]} />
