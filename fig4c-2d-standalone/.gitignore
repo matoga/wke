@@ -1,0 +1,6 @@
+out/
+out-*/
+__pycache__/
+.DS_Store
+package_wke_2d/
+*.zip
