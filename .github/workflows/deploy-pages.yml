@@ -29,6 +29,18 @@ jobs:
         run: npm ci
       - name: Build site
         run: npm run build
+      # The previous release stays available under legacy/, built from its pinned commit.
+      - name: Check out legacy release
+        uses: actions/checkout@v4
+        with:
+          ref: 1a9c0c97914aff9353ce85af689e360a0ea169ab
+          path: legacy-src
+      - name: Build legacy release into legacy/
+        working-directory: legacy-src
+        run: |
+          npm ci
+          npm run build
+          cp -R dist ../dist/legacy
       - name: Configure Pages
         uses: actions/configure-pages@v5
       - name: Upload site artifact
