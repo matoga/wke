@@ -73,18 +73,33 @@ export interface Verdict { tone: Tone; text: string; title: string }
 /** Validity of the loop expansion over a run, from its per-step diagnostics. */
 export function loopVerdict(r: WKEResult): Verdict | null {
   if (r.model === 'bare') return null;
+  // A run that reached its target is judged up to it: a pair partner, or a continuation, may go on past it.
+  const dt = r.dtTarget_s;
+  const n = dt != null ? r.kpTrack.t_s.findIndex((t) => t > dt * (1 + 1e-9)) : -1;
+  if (n <= 0) return loopVerdictOver(r, r.kpTrack.t_s.length, '');
+  const v = loopVerdictOver(r, n, ' up to the target');
+  const after = loopVerdictOver(r, r.kpTrack.t_s.length, '');
+  return after && v && (TONE_RANK[after.tone] ?? 0) > (TONE_RANK[v.tone] ?? 0)
+    ? { ...v, text: `${v.text}; past the target ${after.text.split(': ').pop()}`, title: `${v.title} Past the target: ${after.text}.` }
+    : v;
+}
+
+const TONE_RANK: Partial<Record<Tone, number>> = { ok: 0, warn: 1, bad: 2 };
+
+function loopVerdictOver(r: WKEResult, n: number, span: string): Verdict | null {
+  const loop = r.kpTrack.loop.slice(0, n), pole = r.kpTrack.pole.slice(0, n), shares = (r.kpTrack.share ?? []).slice(0, n);
   if (r.model === 'one-loop') {
-    const worst = r.kpTrack.loop.reduce((m, v) => Math.max(m, Math.abs(v)), 0);
-    const mMin = r.kpTrack.pole.reduce((m, v) => Math.min(m, v), Infinity);
+    const worst = loop.reduce((m, v) => Math.max(m, Math.abs(v)), 0);
+    const mMin = pole.reduce((m, v) => Math.min(m, v), Infinity);
     const text = `dressing up to ${(100 * worst).toFixed(0)}%`;
-    const title = 'Largest collision-weighted one-loop correction |M − 1| during the run, and the smallest bracket M.';
+    const title = `Largest collision-weighted one-loop correction |M − 1| during the run${span}, and the smallest bracket M.`;
     if (worst >= 0.3 || mMin <= 0.5) return { tone: 'bad', text: `${text}: not quantitative`, title };
     if (worst >= 0.1) return { tone: 'warn', text: `${text}: marginal`, title };
     return { tone: 'ok', text: `${text}: perturbative`, title };
   }
-  const wMax = r.kpTrack.pole.reduce((m, v) => Math.max(m, v), 0);
-  const share = (r.kpTrack.share ?? []).reduce((m, v) => (Number.isFinite(v) ? Math.max(m, v) : m), 0);
-  const title = `Largest share of the collision rate carried by collisions whose averaged dressing M exceeds ${POLE_DRESSING_LIMIT};`
+  const wMax = pole.reduce((m, v) => Math.max(m, v), 0);
+  const share = shares.reduce((m, v) => (Number.isFinite(v) ? Math.max(m, v) : m), 0);
+  const title = `Largest share of the collision rate${span} carried by collisions whose averaged dressing M exceeds ${POLE_DRESSING_LIMIT};`
     + ` the model has broken down above ${100 * POLE_RATE_SHARE}%. The largest sampled vertex weight 1/|1 − cL|² was ${wMax.toFixed(1)}`
     + ' (a diagnostic only: near a pole it depends on where the table nodes fall).';
   const text = `M > ${POLE_DRESSING_LIMIT} on ${sharePercent(share)} of the rate`;

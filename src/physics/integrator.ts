@@ -354,6 +354,11 @@ export async function runWKE(config: IntegrationConfig): Promise<IntegrationResu
       }
     }
     if (consecutiveRejects > 60 || !(h > 0)) {
+      // a held run past its target keeps its result: it ends early, at its last accepted state
+      if (hold && reachedHalf) {
+        terminationMessage = 'Step size collapsed after the target, before the pair\'s common end; the run ends at its last accepted state.';
+        break;
+      }
       termination = 'nonfinite';
       terminationMessage = 'Step size collapsed; the kinetic equation became too stiff to continue.';
       break;

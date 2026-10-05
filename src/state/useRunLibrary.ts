@@ -127,7 +127,7 @@ export function onLattice(snaps: WKESnapshot[], stride: number): WKESnapshot[] {
 }
 
 /** Append a continuation segment onto a finished run. */
-function mergeContinuation(prior: WKEResult, seg: WKEResult): WKEResult {
+export function mergeContinuation(prior: WKEResult, seg: WKEResult): WKEResult {
   const offsetTau = prior.snapshots.at(-1)?.tau ?? 0;
   const offsetT = prior.kpTrack.t_s.at(-1) ?? 0;
   const snapshots = seg.snapshots.map((s) => ({
@@ -142,7 +142,7 @@ function mergeContinuation(prior: WKEResult, seg: WKEResult): WKEResult {
     reachedTarget: reached,
     tauTarget: prior.reachedTarget ? prior.tauTarget : seg.reachedTarget ? (seg.tauTarget ?? 0) + offsetTau : null,
     dtTarget_s: prior.reachedTarget ? prior.dtTarget_s : seg.reachedTarget ? (seg.dtTarget_s ?? 0) + offsetT : null,
-    termination: seg.termination === 'steps' && reached ? 'target' : seg.termination,
+    termination: (seg.termination === 'steps' || seg.termination === 'tauMax') && reached ? 'target' : seg.termination,
     terminationMessage: seg.terminationMessage,
     snapshots: onLattice([...prior.snapshots, ...snapshots], seg.latticeStride),
     breakdown: prior.breakdown ?? (seg.breakdown ? { ...seg.breakdown, t_s: seg.breakdown.t_s + offsetT } : null),
@@ -213,6 +213,8 @@ interface Active {
   checks: Partial<Record<SignKey, { key: string; tEval: number[] }>>;
   /** the key selected when the job ends */
   select: string | null;
+  /** set when a run of the job failed; the others are stopped and drained */
+  error?: string;
 }
 
 export function useRunLibrary(setup: RunSetup | null) {
@@ -302,6 +304,11 @@ export function useRunLibrary(setup: RunSetup | null) {
     if (!act) return;
     act.pending -= 1;
     if (act.pending > 0) return;
+    if (act.error) {
+      activeRef.current = null;
+      setProgress({ ...IDLE, error: act.error });
+      return;
+    }
     if (act.select) setSelectedKey(act.select);
     const signs = (Object.keys(act.checks) as SignKey[]);
     if (act.job && signs.length && !stopRequestedRef.current) {
@@ -358,12 +365,16 @@ export function useRunLibrary(setup: RunSetup | null) {
         return rest;
       });
       if (msg.type === 'error') {
-        // one failed run ends the job: stop its partner, drop the queue
-        for (const id of act.runs.keys()) if (id !== msg.runId) w.postMessage({ type: 'stop', runId: id });
-        queueRef.current = [];
-        activeRef.current = null;
-        setLiveById({});
-        setProgress({ ...IDLE, error: msg.message });
+        // one failed run ends the job: stop its partner and drop the queue. The partner's stopped
+        // result is still kept, since the solver saves its end state for a later Continue.
+        if (!act.error) {
+          act.error = msg.message;
+          stopRequestedRef.current = true;
+          queueRef.current = [];
+          for (const id of act.runs.keys()) if (id !== msg.runId) w.postMessage({ type: 'stop', runId: id });
+          setProgress((prev) => ({ ...prev, stopping: true, queued: 0, error: msg.message }));
+        }
+        finishRun(w);
         return;
       }
       setProgress((prev) => summarise(prev, { ...prev.perSign, [sk(sign)]: { ...(prev.perSign[sk(sign)] ?? { phase: 'integrating', pct: 1 }), pct: 1, done: true } }));
@@ -385,8 +396,10 @@ export function useRunLibrary(setup: RunSetup | null) {
           setRecords((prev) => {
             const main = prev[mainKey];
             if (!main) return prev;
-            return { ...prev, [mainKey]: { ...main, check: stopRequestedRef.current || msg.termination === 'stopped'
-              ? undefined : compareRuns(main.result, msg, msg.accuracy) } };
+            const checked: RunRecord = { ...main, check: stopRequestedRef.current || msg.termination === 'stopped'
+              ? undefined : compareRuns(main.result, msg, msg.accuracy) };
+            const partner = prev[partnerKeyOf(mainKey)];
+            return { ...prev, [mainKey]: checked, ...(partner?.mirrored ? { [partner.key]: mirror(checked) } : {}) };
           });
         }
         finishRun(w);

@@ -251,6 +251,29 @@ check('no inline fixed-width font styling', !container.innerHTML.includes('mono'
 check('equations are typeset', container.querySelectorAll('.katex').length > 10);
 
 await act(async () => { root.unmount(); });
+{
+  // Pure helpers: verdicts of a run that went on past its target.
+  const { loopVerdict, terminationVerdict } = await import('../src/ui/runView');
+  const { mergeContinuation } = await import('../src/state/useRunLibrary');
+  type R = import('../src/types/wke').WKEResult;
+  const track = (share: number[]) => ({
+    t_s: share.map((_, i) => i), kp: share.map(() => 1), loop: share.map(() => 0), pole: share.map(() => 1), share,
+  });
+  const base = {
+    model: 'chain', stopKpFraction: 0.5, kp0_um_inv: 2, reachedTarget: true, tauTarget: 2, dtTarget_s: 2,
+    termination: 'target', terminationMessage: null, breakdown: null, latticeStride: 1,
+    snapshots: [{ tau: 0, t_s: 0, stage: 'initial' }, { tau: 3, t_s: 3, stage: 'final' }],
+    kpTrack: track([0, 0, 0, 0.5]), nSteps: 3, nRhs: 9, nRejected: 0, wallTime_ms: 1, maxDN: 0, maxDE: 0,
+  } as unknown as R;
+  const lv = loopVerdict(base)!;
+  check('loop verdict is judged up to the target', lv.tone === 'ok', lv.text);
+  check('loop verdict names a breakdown past the target', /past the target at the pole/.test(lv.text), lv.text);
+  const seg = { ...base, reachedTarget: false, tauTarget: null, dtTarget_s: null, termination: 'tauMax',
+    snapshots: [{ tau: 0, t_s: 0, stage: 'initial' }, { tau: 3, t_s: 3, stage: 'final' }], kpTrack: track([0.5, 0.5]) } as unknown as R;
+  const merged = mergeContinuation(base, seg);
+  check('a pair continuation past the target keeps its target verdict', terminationVerdict(merged).tone === 'ok', merged.termination);
+}
+
 console.log(`\n${passed} passed, ${failures.length} failed`);
 if (failures.length) {
   for (const f of failures) console.log(`  FAIL  ${f}`);
