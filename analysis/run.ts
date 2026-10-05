@@ -19,7 +19,8 @@
  *   - the instantaneous rate (m/ħ) d(1/k_p²)/dt, taken from the collision term itself:
  *       dk_p/dτ = [k_p(f + εC) − k_p(f − εC)] / 2ε,  C = ∂τ f,  d(1/k_p²)/dt = −2 k_p⁻³ dk_p/dτ / t₀,
  *     with an uncertainty from two peak-fit widths (δ = 0.02, 0.05) and two steps (ε, 2ε),
- *   - the largest resummed weight (pole indicator),
+ *   - the largest sampled resummed weight (poleWeight, a diagnostic) and the share of the collision rate
+ *     carried by collisions whose averaged dressing exceeds POLE_DRESSING_LIMIT (poleShare, the breakdown rule),
  *   - the length ℓ̄ = (f(k→0)/n)^(1/3) (fields ell_um, ellRate, ellRateErr), f(k→0) from a fit
  *     ln f = A + B k² over k ≤ k_p/5, and (m/ħ) dℓ̄²/dt, also from the collision term; the plots turn
  *     it into the coherence length ℓ = ℓ̄ η_eq^(−1/3) for Bose +1 runs,
@@ -185,9 +186,9 @@ const t0 = Date.now();
 await backend.prepare({ level: accuracy, pMax, pMin, nGrid, model: MODEL_BY_ID[model].solver, kernel, loopScale, ncal: sc.ncal, sign: sc.sign });
 const C = new Float64Array(k.length), fp = new Float64Array(k.length), fm = new Float64Array(k.length);
 
-/** Instantaneous (m/ħ) d(1/k_p²)/dt at state f, its uncertainty, and the pole indicator. */
-function rateAt(f: Float64Array): [number, number, number, number] {
-  const diag = backend.rhs(f, C) as { poleIndicator: number };
+/** Instantaneous (m/ħ) d(1/k_p²)/dt at state f, its uncertainty, the pole indicator and the pole rate share. */
+function rateAt(f: Float64Array): [number, number, number, number, number] {
+  const diag = backend.rhs(f, C) as { poleIndicator: number; poleShare: number };
   const kp = kpSmooth(f, 0.02);
   const ip = Math.max(0, k.findIndex((kk) => kk >= kp));
   let cmax = 0;
@@ -204,7 +205,7 @@ function rateAt(f: Float64Array): [number, number, number, number] {
   }
   let err = 0;
   for (const v of est) err = Math.max(err, Math.abs(v - est[0]));
-  return [kXi / kp, est[0], err, diag.poleIndicator];
+  return [kXi / kp, est[0], err, diag.poleIndicator, diag.poleShare];
 }
 
 /** f(k→0): least-squares fit ln f = A + B k² over all grid points with k ≤ kMax; returns e^A. */
@@ -269,7 +270,7 @@ function kpWideAt(f: Float64Array): [number, number, number] {
   return [kp, est[0], err];
 }
 
-const points = { t_s: [] as number[], X: [] as number[], rate: [] as number[], rateErr: [] as number[], poleWeight: [] as number[],
+const points = { t_s: [] as number[], X: [] as number[], rate: [] as number[], rateErr: [] as number[], poleWeight: [] as number[], poleShare: [] as number[],
   ell_um: [] as number[], ellRate: [] as number[], ellRateErr: [] as number[], N_rel: [] as number[], E_rel: [] as number[],
   kpw_um_inv: [] as number[], kpwRate: [] as number[], kpwRateErr: [] as number[] };
 
@@ -331,8 +332,9 @@ const res = await runWKE({
     const Xw = kXi / kpWide(f, 0.5);
     if (Math.log10(Xw) - lastLogX < 0.02) return;
     lastLogX = Math.log10(Xw);
-    const [x, y, e, w] = rateAt(Float64Array.from(f));
+    const [x, y, e, w, share] = rateAt(Float64Array.from(f));
     points.t_s.push(tau * sc.t0_s); points.X.push(x); points.rate.push(y); points.rateErr.push(e); points.poleWeight.push(w);
+    points.poleShare.push(share);
     const [ell, ey, ee] = ellAt(f, kXi / x);
     points.ell_um.push(ell); points.ellRate.push(ey); points.ellRateErr.push(ee);
     const [kw, wy, we] = kpWideAt(f);
